@@ -1,82 +1,95 @@
 # 🔍 ContentScout
 
+<div align="center">
+
 **AI-Powered Content Originality Scanner**
 
-ContentScout analyzes your content for originality using simulated AI consensus scoring. Submit text, get a 0-100 originality score, and see detailed metrics on uniqueness, vocabulary, structure, and creativity.
+Analyze your content for originality using transparent, rule-based scoring.  
+Optionally broadcast results on-chain via GenLayer Bradbury testnet.
 
-> 🎯 **Inspired by [OriginalityArbiter](https://github.com/rivaleuc/OriginalityArbiter)** — a GenLayer-based content originality scoring system with on-chain token rewards.
+[![Live Demo](https://img.shields.io/badge/demo-live-00ffc8?style=for-the-badge)](https://contentscout.pages.dev)
+[![GenLayer](https://img.shields.io/badge/GenLayer-Bradbury-ff00c8?style=for-the-badge)](https://genlayer.com)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 
-![ContentScout Demo](https://img.shields.io/badge/demo-live-00ffc8?style=for-the-badge)
 ![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript)
 ![Tailwind](https://img.shields.io/badge/Tailwind-4-38bdf8?style=flat-square&logo=tailwindcss)
+![Vite](https://img.shields.io/badge/Vite-7-646cff?style=flat-square&logo=vite)
+
+</div>
 
 ---
 
 ## ✨ Features
 
-- 🤖 **AI Consensus Simulation** — Mimics GenLayer's validator consensus mechanism
-- 📊 **Multi-Metric Analysis** — Scores for uniqueness, vocabulary, structure, creativity
-- 🔗 **Wallet Connection** — Simulated MetaMask integration for Web3 UX
-- 📝 **Content Types** — Support for articles, essays, code, creative writing, research
-- 🔄 **Appeal System** — Re-judge flagged content with fresh analysis
-- 🏆 **Reward Eligibility** — Track which submissions qualify for token rewards
-- 🌙 **Cyberpunk UI** — Terminal-inspired dark theme with neon accents
+- 🤖 **AI Pattern Detection** — Identifies 90+ common AI-generated phrases and patterns
+- 📊 **4-Metric Scoring** — Uniqueness, Vocabulary, Structure, Creativity
+- ⚡ **Instant Results** — Local analysis runs immediately (<1ms)
+- 🔗 **On-Chain Option** — Optionally record results on GenLayer blockchain
+- 🦊 **MetaMask Integration** — Sign real transactions with your wallet
+- 🎨 **Cyberpunk UI** — Terminal-inspired dark theme with neon accents
+- 📱 **Responsive** — Works on desktop and mobile
 
 ---
 
-## 🛠 Tech Stack
+## 📋 Scoring System
 
-| Technology | Purpose |
-|------------|---------|
-| **React 19** | UI framework |
-| **TypeScript** | Type safety |
-| **Vite** | Build tool |
-| **Tailwind CSS v4** | Styling |
-| **Framer Motion** | Animations |
-| **Sonner** | Toast notifications |
-
----
-
-## 📁 Project Structure
+### How Scores Are Calculated
 
 ```
-ContentScout/
-├── src/
-│   ├── components/
-│   │   ├── Header.tsx          # Navigation with wallet connection
-│   │   ├── Stats.tsx           # Dashboard statistics
-│   │   ├── SubmitForm.tsx      # Content submission form
-│   │   ├── ResultCard.tsx      # Analysis result display
-│   │   ├── SubmissionList.tsx  # History of submissions
-│   │   ├── WalletModal.tsx     # Wallet connection modal
-│   │   └── RewardInfo.tsx      # Reward system info
-│   ├── hooks/
-│   │   ├── useWallet.ts        # Wallet state management
-│   │   └── useContract.ts      # Contract interaction hook
-│   ├── lib/
-│   │   ├── genlayer.ts         # Simulated GenLayer SDK
-│   │   └── analyzer.ts         # Content analysis engine
-│   ├── types/
-│   │   └── index.ts            # TypeScript definitions
-│   ├── App.tsx                 # Main application
-│   ├── main.tsx                # Entry point
-│   └── index.css               # Global styles
-├── index.html
-├── package.json
-├── vite.config.ts
-├── tailwind.config.js
-└── README.md
+Final Score = Uniqueness × 35% + Vocabulary × 25% + Structure × 20% + Creativity × 20%
+
+Score ≥ 40 → PASS (Original)
+Score < 40 → REJECT (Flagged)
 ```
+
+### 1. Uniqueness (35%) — AI Pattern Detection
+
+Detects common AI-generated content patterns:
+
+| Category | Examples | Penalty |
+|----------|----------|---------|
+| High-confidence AI phrases | "it is important to note", "in today's rapidly evolving" | -6 each |
+| Overused filler words | "furthermore", "consequently", "comprehensive" | -3 each |
+| Marketing buzzwords | "leverage", "cutting-edge", "game-changer" | -2 each |
+| Structural patterns | "let's dive into", "here are some" | -4 each |
+
+### 2. Vocabulary (25%) — Lexical Richness
+
+| Metric | What It Measures |
+|--------|------------------|
+| Type-Token Ratio | Unique words / Total words |
+| Hapax Legomena | Words appearing exactly once |
+| Word Sophistication | Average word length + rare words |
+| Repetition Penalty | Excessive repetition of content words |
+
+### 3. Structure (20%) — Writing Patterns
+
+| Metric | Natural Writing | AI Writing |
+|--------|-----------------|------------|
+| Sentence Length Variance | High (CV > 0.3) | Low (CV < 0.2) |
+| Sentence Mix | Short + Medium + Long | Uniform |
+| Paragraph Organization | Multiple paragraphs | Single block |
+| Punctuation Variety | `,` `;` `:` `—` `()` | Minimal |
+
+### 4. Creativity (20%) — Original Voice
+
+| Factor | Indicators |
+|--------|------------|
+| Personal Voice | I/my/we + opinion markers ("I think", "I believe") |
+| Specific Evidence | Numbers, percentages, dates, proper nouns, citations |
+| Rhetorical Engagement | Questions, exclamations, direct address |
+| Unique Phrasing | Uncommon word combinations, domain terms |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or pnpm
+- **Node.js** 18+
+- **MetaMask** (optional, for on-chain features)
+- **GEN tokens** (free from [faucet](https://faucet.genlayer.com))
 
 ### Installation
 
@@ -95,104 +108,101 @@ npm run dev
 npm run build
 ```
 
-### Development
+### Available Scripts
 
-```bash
-npm run dev      # Start dev server at http://localhost:5173
-npm run build    # Build for production
-npm run preview  # Preview production build
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server at http://localhost:5173 |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
+| `npm run lint` | TypeScript type checking |
+
+---
+
+## 🏗 Architecture
+
+### Hybrid Mode: Local + On-Chain
+
+ContentScout works in two modes:
+
+1. **Local Mode** (always available)
+   - Instant analysis using JavaScript algorithms
+   - Results stored in browser memory
+   - No wallet or tokens required
+
+2. **On-Chain Mode** (with MetaMask)
+   - Same instant local analysis
+   - Additionally broadcasts to GenLayer Bradbury
+   - Permanent on-chain record
+   - Requires GEN tokens for gas
+
+```
+User Submit → Local Analysis (instant) → Show Results
+                    ↓
+              [If wallet connected]
+                    ↓
+              On-Chain TX (background) → Update Status Badge
+```
+
+### Project Structure
+
+```
+ContentScout/
+├── src/
+│   ├── components/
+│   │   ├── Header.tsx          # Navigation + wallet connection
+│   │   ├── Stats.tsx           # Dashboard statistics
+│   │   ├── SubmitForm.tsx      # Content submission form
+│   │   ├── ResultCard.tsx      # Analysis results display
+│   │   ├── SubmissionList.tsx  # Submission history
+│   │   ├── WalletModal.tsx     # MetaMask connection modal
+│   │   └── RewardInfo.tsx      # Token rewards info
+│   ├── hooks/
+│   │   ├── useWallet.ts        # MetaMask state management
+│   │   └── useContract.ts      # Contract interaction hook
+│   ├── lib/
+│   │   ├── genlayer.ts         # GenLayer SDK integration
+│   │   └── analyzer.ts         # ⭐ Scoring algorithms
+│   ├── types/
+│   │   └── index.ts            # TypeScript definitions
+│   ├── App.tsx                 # Main application
+│   ├── main.tsx                # Entry point
+│   └── index.css               # Global styles
+├── index.html
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+├── LICENSE
+└── README.md
 ```
 
 ---
 
-## 🎮 How It Works
+## 🔧 Configuration
 
-### 1. Connect Wallet
-Click "CONNECT" to simulate wallet connection. A demo address is auto-generated.
+### Environment Variables (Optional)
 
-### 2. Submit Content
-- Select content type (Article, Essay, Code, etc.)
-- Paste your content (50-4000 characters)
-- Optionally add a source URL
-- Click "EXECUTE ANALYSIS"
+Create `.env.local` for custom configuration:
 
-### 3. Get Results
-The analyzer evaluates:
+```env
+# Override contract address
+VITE_CONTRACT_ADDRESS=0x...
 
-| Metric | Description |
-|--------|-------------|
-| **Uniqueness** | Detection of AI-generated phrases |
-| **Vocabulary** | Richness and diversity of word usage |
-| **Structure** | Sentence variation and naturalness |
-| **Creativity** | Personal voice and creative elements |
+# Override RPC endpoint
+VITE_RPC_ENDPOINT=https://rpc-bradbury.genlayer.com
 
-### 4. Score Interpretation
-
-| Score | Verdict | Meaning |
-|-------|---------|---------|
-| 70-100 | ✅ Original | Highly original content |
-| 40-69 | ⚠️ Borderline | Likely original with some common patterns |
-| 0-39 | 🚫 Flagged | Signs of plagiarism or AI-generation |
-
-### 5. Appeal (Optional)
-If your content is flagged, you can appeal for re-analysis.
-
----
-
-## 🔬 Analysis Algorithm
-
-ContentScout uses a weighted scoring system:
-
-```
-Final Score = (Uniqueness × 0.35) + (Vocabulary × 0.25) 
-            + (Structure × 0.20) + (Creativity × 0.20)
+# Override chain ID
+VITE_CHAIN_ID=4221
 ```
 
-**Uniqueness Detection:**
-- Scans for common AI-generated phrases
-- Identifies template-like language patterns
+### GenLayer Contract
 
-**Vocabulary Analysis:**
-- Calculates unique word ratio
-- Adjusts for content length
-
-**Structure Evaluation:**
-- Measures sentence length variance
-- Checks paragraph organization
-
-**Creativity Scoring:**
-- Personal pronouns (+voice)
-- Questions/exclamations (+engagement)
-- Specific numbers/data (+research)
-- Quote usage (+attribution)
-
----
-
-## 🎨 UI Design
-
-ContentScout features a **cyberpunk terminal aesthetic**:
-
-- 🖥 **Terminal Console UI** — Window bars, file tabs, `$` prompts
-- 📡 **Animated Grid Background** — Matrix-style moving grid
-- 💫 **Neon Glow Effects** — Cyan/magenta/lime text shadows
-- 📊 **Waveform Visualizer** — Animated score display
-- 🔲 **Corner Accent Frames** — HUD-style brackets
-- 📺 **Scanline Overlay** — Retro CRT effect
-
----
-
-## 🔄 Comparison with Original
-
-| Feature | OriginalityArbiter | ContentScout |
-|---------|-------------------|--------------|
-| **Blockchain** | GenLayer Bradbury | Simulated |
-| **Smart Contract** | Python (GenVM) | JavaScript mock |
-| **Wallet** | Real MetaMask | Simulated |
-| **Token Rewards** | OAT ERC-20 | Demo only |
-| **Web Crawling** | gl.nondet.web.get | N/A |
-| **AI Model** | LLM via GenVM | Algorithm-based |
-| **Theme** | Light (cream/teal) | Dark (cyberpunk) |
-| **Font** | Serif | Monospace |
+| Property | Value |
+|----------|-------|
+| Network | GenLayer Bradbury (Testnet) |
+| Chain ID | 4221 |
+| Contract | `0xEDf0e9B44b609f63aE17d1345C1e5dDF81000BdE` |
+| Explorer | [View on Explorer](https://explorer-bradbury.genlayer.com/contract/0xEDf0e9B44b609f63aE17d1345C1e5dDF81000BdE) |
 
 ---
 
@@ -201,7 +211,6 @@ ContentScout features a **cyberpunk terminal aesthetic**:
 ### Cloudflare Pages
 
 ```bash
-# Build settings
 Build command: npm run build
 Output directory: dist
 Node version: 20
@@ -217,34 +226,44 @@ Node version: 20
 ### Netlify
 
 ```bash
-# Build settings
 Build command: npm run build
 Publish directory: dist
 ```
 
 ---
 
-## 📝 Environment Variables
+## 📖 Tech Stack
 
-No environment variables required for the demo version.
-
-For production with real GenLayer integration:
-
-```env
-VITE_GENLAYER_RPC=https://rpc.genlayer.com
-VITE_CONTRACT_ADDRESS=0x...
-VITE_CHAIN_ID=4221
-```
+| Technology | Purpose |
+|------------|---------|
+| **React 19** | UI framework |
+| **TypeScript 5** | Type safety |
+| **Vite 7** | Build tool |
+| **Tailwind CSS 4** | Styling |
+| **Framer Motion** | Animations |
+| **Sonner** | Toast notifications |
+| **genlayer-js** | Blockchain SDK |
 
 ---
 
-## 🤝 Contributing
+## 🔗 Links
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+| Resource | URL |
+|----------|-----|
+| **Live Demo** | https://contentscout.pages.dev |
+| **GenLayer Docs** | https://docs.genlayer.com |
+| **Faucet** | https://faucet.genlayer.com |
+| **Explorer** | https://explorer-bradbury.genlayer.com |
+| **genlayer-js** | https://github.com/genlayerlabs/genlayer-js |
+
+---
+
+## 🙏 Acknowledgments
+
+- **[OriginalityArbiter](https://github.com/rivaleuc/OriginalityArbiter)** — Original inspiration
+- **[GenLayer](https://genlayer.com)** — AI consensus blockchain platform
+- **[Tailwind CSS](https://tailwindcss.com)** — Utility-first CSS framework
+- **[Framer Motion](https://www.framer.com/motion/)** — Animation library
 
 ---
 
@@ -254,19 +273,10 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgments
-
-- [OriginalityArbiter](https://github.com/rivaleuc/OriginalityArbiter) — Original project inspiration
-- [GenLayer](https://genlayer.com) — AI consensus blockchain protocol
-- [Tailwind CSS](https://tailwindcss.com) — Utility-first CSS framework
-- [Framer Motion](https://www.framer.com/motion/) — Animation library
-
----
-
 <div align="center">
 
-**Built with 💜 by the ContentScout Team**
+**Built with 💜 using React + GenLayer**
 
-[Demo](https://contentscout.pages.dev) · [Report Bug](https://github.com/user/ContentScout/issues) · [Request Feature](https://github.com/user/ContentScout/issues)
+[⬆ Back to Top](#-contentscout)
 
 </div>

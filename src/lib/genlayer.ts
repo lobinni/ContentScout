@@ -1,250 +1,396 @@
 /**
- * ContentScout — GenLayer Client Simulation
+ * ContentScout — Hybrid GenLayer Integration
  * 
- * Simulates the genlayer-js SDK for demo purposes.
- * Production would use the real package:
+ * Works in two modes:
+ * 1. ON-CHAIN: Real transactions on GenLayer Bradbury via MetaMask
+ * 2. LOCAL FALLBACK: Instant results using local analyzer when on-chain unavailable
  * 
- * import { createClient } from 'genlayer-js';
- * const client = createClient({ chain: 'bradbury', endpoint: 'https://rpc.genlayer.com' });
+ * Results are always shown immediately via local analysis.
+ * On-chain status updates asynchronously in the background.
  */
 
-import { Submission, ContractStats, RewardEligibility, AnalysisResult } from '../types';
+import { createClient } from 'genlayer-js';
+import { testnetBradbury } from 'genlayer-js/chains';
+import { TransactionStatus } from 'genlayer-js/types';
+import { Submission, ContractStats, RewardEligibility } from '../types';
 import { analyzeOriginality } from './analyzer';
 
-// Simulated contract address (like the real one on Bradbury)
+// ─── Constants ──────────────────────────────────────────────
 export const CONTRACT_ADDRESS = '0xEDf0e9B44b609f63aE17d1345C1e5dDF81000BdE';
-export const CHAIN_ID = 4221; // GenLayer Bradbury
-export const PLAGIARISM_THRESHOLD = 40; // Score >= 40 is considered original
+export const CHAIN_ID = 4221;
+export const PLAGIARISM_THRESHOLD = 40;
+export const RPC_ENDPOINT = 'https://rpc-bradbury.genlayer.com';
+export const EXPLORER_URL = 'https://explorer-bradbury.genlayer.com';
 
-// In-memory storage (simulating TreeMap[str, str] from contract)
-let submissions: Map<string, Submission> = new Map();
-let submissionCount = 0;
-let totalRewarded = 0;
-let totalRejected = 0;
-
-// Simulated wallet state
+// ─── State ──────────────────────────────────────────────────
+let client: ReturnType<typeof createClient> | null = null;
 let connectedAddress: string | null = null;
 
-/**
- * Connect wallet (simulates MetaMask connection)
- */
+// Local submissions store (always works, even without blockchain)
+let localSubmissions: Submission[] = [];
+let localSubmissionCount = 0;
+let localTotalRewarded = 0;
+let localTotalRejected = 0;
+
+// ─── MetaMask Helpers ───────────────────────────────────────
+
+export function isMetaMaskAvailable(): boolean {
+  return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
+}
+
+async function switchToGenLayerNetwork(): Promise<void> {
+  if (!window.ethereum) return;
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
+    });
+  } catch (err: any) {
+    if (err.code === 4902) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: `0x${CHAIN_ID.toString(16)}`,
+          chainName: 'GenLayer Bradbury',
+          nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
+          rpcUrls: [RPC_ENDPOINT],
+          blockExplorerUrls: [EXPLORER_URL],
+        }],
+      });
+    }
+  }
+}
+
+// ─── Wallet ─────────────────────────────────────────────────
+
 export async function connectWallet(): Promise<string> {
-  // Simulate wallet connection delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-  
-  // Generate a random address for demo
-  const address = '0x' + Array.from({ length: 40 }, () => 
-    Math.floor(Math.random() * 16).toString(16)
-  ).join('');
-  
+  if (!isMetaMaskAvailable()) {
+    throw new Error('MetaMask is not installed');
+  }
+
+  const accounts = await window.ethereum!.request({
+    method: 'eth_requestAccounts',
+  }) as string[];
+
+  if (!accounts?.length) throw new Error('No accounts found');
+
+  const address = accounts[0];
+
+  try {
+    const chainId = parseInt(
+      await window.ethereum!.request({ method: 'eth_chainId' }) as string,
+      16
+    );
+    if (chainId !== CHAIN_ID) await switchToGenLayerNetwork();
+  } catch (e) {
+    console.warn('Network switch failed:', e);
+  }
+
+  // Create GenLayer client
+  client = createClient({
+    chain: testnetBradbury,
+    account: address as `0x${string}`,
+  });
+
   connectedAddress = address;
+
+  window.ethereum!.on('accountsChanged', (accs: string[]) => {
+    if (!accs.length) {
+      disconnectWallet();
+    } else {
+      connectedAddress = accs[0];
+      client = createClient({
+        chain: testnetBradbury,
+        account: accs[0] as `0x${string}`,
+      });
+    }
+  });
+
   return address;
 }
 
-/**
- * Disconnect wallet
- */
 export function disconnectWallet(): void {
+  client = null;
   connectedAddress = null;
 }
 
-/**
- * Get connected address
- */
 export function getConnectedAddress(): string | null {
   return connectedAddress;
 }
 
-/**
- * Submit content for originality check
- * Simulates: contract.submit(content, content_type, source_url)
- */
-export async function submit(
+export async function getBalance(): Promise<string> {
+  if (!connectedAddress || !window.ethereum) return '0';
+  try {
+    const hex = await window.ethereum.request({
+      method: 'eth_getBalance',
+      params: [connectedAddress, 'latest'],
+    }) as string;
+    return (parseInt(hex, 16) / 1e18).toFixed(4);
+  } catch {
+    return '0';
+  }
+}
+
+// ─── Submit (Hybrid: local first, then on-chain) ────────────
+
+export interface SubmitResult {
+  submission: Submission;
+  analysis: ReturnType<typeof analyzeOriginality>;
+  txHash?: string;
+  txStatus: 'local' | 'pending' | 'finalized' | 'failed';
+  onChainPromise?: Promise<{ txHash: string; key: string } | null>;
+}
+
+export function submitContent(
   content: string,
   contentType: string,
   sourceUrl: string
-): Promise<{ key: string; submission: Submission }> {
-  if (!connectedAddress) {
-    throw new Error('Wallet not connected');
-  }
+): SubmitResult {
+  const truncated = content.slice(0, 4000);
 
-  // Simulate transaction submission delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // 1) Run local analysis IMMEDIATELY
+  const analysis = analyzeOriginality(truncated, contentType, sourceUrl);
 
-  // Simulate AI consensus round (gl.vm.run_nondet_unsafe)
-  // In real contract, this runs leader_fn and validator_fn
-  const result: AnalysisResult = await runNondetUnsafe(content, contentType, sourceUrl);
-
-  // Simulate finalization delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
-
-  const key = submissionCount.toString();
-  submissionCount++;
+  // 2) Create local submission record
+  const key = `local-${localSubmissionCount}`;
+  localSubmissionCount++;
 
   const submission: Submission = {
     key,
-    author: connectedAddress,
-    content_preview: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
+    author: connectedAddress || '0x0000000000000000000000000000000000000000',
+    content_preview: truncated.substring(0, 200) + (truncated.length > 200 ? '...' : ''),
     content_type: contentType,
     source_url: sourceUrl,
-    originality_score: result.originality_score,
-    is_original: result.is_original,
-    reasoning: result.reasoning,
-    similar_sources: result.similar_sources,
+    originality_score: analysis.originality_score,
+    is_original: analysis.is_original,
+    reasoning: analysis.reasoning,
+    similar_sources: analysis.similar_sources,
     appealed: false,
     timestamp: Date.now(),
+    txStatus: 'local',
   };
 
-  submissions.set(key, submission);
-
-  // Update counters
-  if (result.is_original) {
-    totalRewarded++;
+  // Update local counters
+  if (analysis.is_original) {
+    localTotalRewarded++;
   } else {
-    totalRejected++;
+    localTotalRejected++;
   }
 
-  return { key, submission };
-}
+  // Store locally
+  localSubmissions.unshift(submission);
 
-/**
- * Appeal a submission
- * Simulates: contract.appeal(key)
- */
-export async function appeal(key: string): Promise<Submission> {
-  if (!connectedAddress) {
-    throw new Error('Wallet not connected');
+  // 3) If wallet connected, also submit on-chain in background
+  let onChainPromise: Promise<{ txHash: string; key: string } | null> | undefined;
+
+  if (client && connectedAddress) {
+    submission.txStatus = 'pending';
+
+    onChainPromise = submitOnChain(truncated, contentType, sourceUrl)
+      .then((result) => {
+        // Update local submission with on-chain data
+        submission.txHash = result.txHash;
+        submission.txStatus = 'finalized';
+        submission.key = result.key;
+        return result;
+      })
+      .catch((err) => {
+        console.error('On-chain submit failed:', err);
+        submission.txStatus = 'failed';
+        return null;
+      });
   }
 
-  const submission = submissions.get(key);
-  if (!submission) {
-    throw new Error('Submission not found');
-  }
-
-  if (submission.author !== connectedAddress) {
-    throw new Error('Only the original author can appeal');
-  }
-
-  if (submission.appealed) {
-    throw new Error('Already appealed');
-  }
-
-  // Simulate re-judgment with fresh web search
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  // Re-run analysis (simulating fresh web evidence)
-  const result = await runNondetUnsafe(
-    submission.content_preview,
-    submission.content_type,
-    submission.source_url
-  );
-
-  const previousIsOriginal = submission.is_original;
-
-  // Update submission
-  submission.originality_score = result.originality_score;
-  submission.is_original = result.is_original;
-  submission.reasoning = result.reasoning;
-  submission.similar_sources = result.similar_sources;
-  submission.appealed = true;
-
-  // Reconcile counters if verdict flipped
-  if (previousIsOriginal !== result.is_original) {
-    if (result.is_original) {
-      totalRewarded++;
-      totalRejected--;
-    } else {
-      totalRewarded--;
-      totalRejected++;
-    }
-  }
-
-  submissions.set(key, submission);
-
-  return submission;
-}
-
-/**
- * Read a submission
- * Simulates: contract.get_submission(key)
- */
-export function getSubmission(key: string): Submission | null {
-  return submissions.get(key) || null;
-}
-
-/**
- * Get all submissions
- */
-export function getAllSubmissions(): Submission[] {
-  return Array.from(submissions.values()).sort((a, b) => b.timestamp - a.timestamp);
-}
-
-/**
- * Get contract stats
- * Simulates: contract.stats()
- */
-export function getStats(): ContractStats {
   return {
-    submission_count: submissionCount,
-    total_rewarded: totalRewarded,
-    total_rejected: totalRejected,
+    submission,
+    analysis,
+    txStatus: submission.txStatus || 'local',
+    onChainPromise,
   };
 }
 
-/**
- * Read reward eligibility
- * Simulates: contract.read_reward_eligibility(key)
- */
-export function readRewardEligibility(key: string): RewardEligibility | null {
-  const submission = submissions.get(key);
-  if (!submission) return null;
-
-  return {
-    eligible: submission.is_original,
-    author: submission.author,
-    score: submission.originality_score,
-    key: submission.key,
-    claimed: false, // In real system, this would check RewardVault
-  };
-}
-
-/**
- * Simulate gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
- * This is where the AI consensus happens
- */
-async function runNondetUnsafe(
+async function submitOnChain(
   content: string,
   contentType: string,
   sourceUrl: string
-): Promise<AnalysisResult> {
-  // Simulate web crawling if source_url provided
-  // In real contract: gl.nondet.web.get(source_url)
-  if (sourceUrl) {
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
+): Promise<{ txHash: string; key: string }> {
+  if (!client) throw new Error('Client not initialized');
 
-  // Run analysis (simulates gl.nondet.exec_prompt)
-  const result = analyzeOriginality(content, contentType, sourceUrl);
+  const txHash = await client.writeContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'submit',
+    args: [content, contentType, sourceUrl || ''],
+    value: 0n,
+  });
 
-  // Validator function checks:
-  // - originality_score is int in 0-100
-  // - is_original is bool
-  // - reasoning is string
-  // This always passes in our simulation
+  const receipt = await client.waitForTransactionReceipt({
+    hash: txHash,
+    status: TransactionStatus.FINALIZED,
+    retries: 60,
+    interval: 3000,
+  });
 
-  return result;
+  const key = receipt.result?.toString() || '0';
+  return { txHash, key };
 }
 
-/**
- * Format address for display
- */
+// ─── Appeal ─────────────────────────────────────────────────
+
+export async function appeal(key: string): Promise<Submission | null> {
+  // Find the local submission
+  const sub = localSubmissions.find(s => s.key === key);
+
+  if (sub) {
+    // Re-run local analysis
+    const newAnalysis = analyzeOriginality(
+      sub.content_preview,
+      sub.content_type,
+      sub.source_url
+    );
+
+    const previousOriginal = sub.is_original;
+    sub.originality_score = newAnalysis.originality_score;
+    sub.is_original = newAnalysis.is_original;
+    sub.reasoning = newAnalysis.reasoning;
+    sub.similar_sources = newAnalysis.similar_sources;
+    sub.appealed = true;
+
+    // Fix counters
+    if (previousOriginal !== newAnalysis.is_original) {
+      if (newAnalysis.is_original) { localTotalRewarded++; localTotalRejected--; }
+      else { localTotalRewarded--; localTotalRejected++; }
+    }
+
+    // Try on-chain appeal in background
+    if (client && !key.startsWith('local-')) {
+      try {
+        await client.writeContract({
+          address: CONTRACT_ADDRESS as `0x${string}`,
+          functionName: 'appeal',
+          args: [key],
+          value: 0n,
+        });
+      } catch (err) {
+        console.warn('On-chain appeal failed:', err);
+      }
+    }
+
+    return sub;
+  }
+
+  return null;
+}
+
+// ─── Read Methods ───────────────────────────────────────────
+
+export function getAllSubmissions(): Submission[] {
+  return [...localSubmissions];
+}
+
+export function getStats(): ContractStats {
+  return {
+    submission_count: localSubmissionCount,
+    total_rewarded: localTotalRewarded,
+    total_rejected: localTotalRejected,
+  };
+}
+
+export async function getSubmission(key: string): Promise<Submission | null> {
+  // Check local first
+  const local = localSubmissions.find(s => s.key === key);
+  if (local) return local;
+
+  // Try on-chain
+  const readClient = client || createClient({ chain: testnetBradbury });
+  try {
+    const result = await readClient.readContract({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      functionName: 'get_submission',
+      args: [key],
+    });
+    if (!result) return null;
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    return {
+      key,
+      author: data.author || '',
+      content_preview: data.content_preview || '',
+      content_type: data.content_type || '',
+      source_url: data.source_url || '',
+      originality_score: data.originality_score || 0,
+      is_original: data.is_original || false,
+      reasoning: data.reasoning || '',
+      similar_sources: data.similar_sources || [],
+      appealed: data.appealed || false,
+      timestamp: Date.now(),
+      txStatus: 'finalized',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function readRewardEligibility(key: string): Promise<RewardEligibility | null> {
+  // Check local
+  const sub = localSubmissions.find(s => s.key === key);
+  if (sub) {
+    return {
+      eligible: sub.is_original,
+      author: sub.author,
+      score: sub.originality_score,
+      key: sub.key,
+      claimed: false,
+    };
+  }
+  return null;
+}
+
+// Try loading on-chain stats at startup
+export async function loadOnChainStats(): Promise<ContractStats | null> {
+  try {
+    const readClient = createClient({ chain: testnetBradbury });
+    const result = await readClient.readContract({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      functionName: 'stats',
+      args: [],
+    });
+    if (!result) return null;
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    return {
+      submission_count: Number(data.submission_count || 0),
+      total_rewarded: Number(data.total_rewarded || 0),
+      total_rejected: Number(data.total_rejected || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Utility ────────────────────────────────────────────────
+
 export function formatAddress(address: string): string {
+  if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-/**
- * Get explorer URL for contract
- */
-export function getExplorerUrl(): string {
-  return `https://explorer-bradbury.genlayer.com/contract/${CONTRACT_ADDRESS}`;
+export function getExplorerTxUrl(txHash: string): string {
+  return `${EXPLORER_URL}/tx/${txHash}`;
+}
+
+export function getExplorerContractUrl(): string {
+  return `${EXPLORER_URL}/contract/${CONTRACT_ADDRESS}`;
+}
+
+export function getFaucetUrl(): string {
+  return 'https://faucet.genlayer.com';
+}
+
+// ─── Window type extension ──────────────────────────────────
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      on: (event: string, callback: (...args: any[]) => void) => void;
+      removeListener: (event: string, callback: (...args: any[]) => void) => void;
+    };
+  }
 }

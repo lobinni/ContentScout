@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Toaster, toast } from 'sonner';
 import { AnimatePresence } from 'framer-motion';
 
@@ -13,36 +13,57 @@ import RewardInfo from './components/RewardInfo';
 import { useWallet } from './hooks/useWallet';
 import { useContract } from './hooks/useContract';
 
-import { Submission, AnalysisResult } from './types';
+import { Submission, ContractStats, AnalysisResult } from './types';
+import * as genlayer from './lib/genlayer';
 
 function App() {
-  const { wallet, connect, disconnect } = useWallet();
+  const { wallet, connect, disconnect, isMetaMaskAvailable } = useWallet();
   const [showWalletModal, setShowWalletModal] = useState(false);
 
-  const { getAllSubmissions, getStats, submit, appeal } = useContract();
+  const { getAllSubmissions, getStats, submit, appeal, loadOnChainStats } = useContract();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [stats, setStats] = useState(getStats());
+  const [stats, setStats] = useState<ContractStats>({
+    submission_count: 0,
+    total_rewarded: 0,
+    total_rejected: 0,
+  });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
 
-  useEffect(() => {
-    refreshData();
-  }, []);
-
-  const refreshData = () => {
+  // Refresh local data
+  const refreshData = useCallback(() => {
     setSubmissions(getAllSubmissions());
     setStats(getStats());
-  };
+  }, [getAllSubmissions, getStats]);
 
+  // Load on startup
+  useEffect(() => {
+    refreshData();
+
+    // Try to load on-chain stats in background
+    loadOnChainStats().then((onChainStats) => {
+      if (onChainStats && onChainStats.submission_count > 0) {
+        // Merge with local stats
+        setStats(prev => ({
+          submission_count: prev.submission_count + onChainStats.submission_count,
+          total_rewarded: prev.total_rewarded + onChainStats.total_rewarded,
+          total_rejected: prev.total_rejected + onChainStats.total_rejected,
+        }));
+      }
+    });
+  }, []);
+
+  // Connect wallet
   const handleConnectWallet = async () => {
     try {
       await connect();
       setShowWalletModal(false);
-      toast.success('Wallet linked');
-    } catch {
-      toast.error('Connection failed');
+      toast.success('Wallet connected to GenLayer Bradbury');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Connection failed';
+      toast.error(msg);
     }
   };
 
@@ -51,6 +72,7 @@ function App() {
     toast.info('Wallet disconnected');
   };
 
+  // ─── SUBMIT: Local-first, on-chain in background ─────────
   const handleSubmit = async (content: string, contentType: string, sourceUrl: string) => {
     if (!wallet.connected) {
       setShowWalletModal(true);
@@ -61,50 +83,90 @@ function App() {
     setCurrentResult(null);
 
     try {
-      const result = await submit(content, contentType, sourceUrl);
-      if (result) {
-        const { submission } = result;
-        const analysisResult: AnalysisResult = {
-          originality_score: submission.originality_score,
-          is_original: submission.is_original,
-          reasoning: submission.reasoning,
-          similar_sources: submission.similar_sources,
-          metrics: {
-            uniqueness: Math.min(100, Math.round(submission.originality_score * 0.9 + Math.random() * 10)),
-            vocabulary: Math.min(100, Math.round(submission.originality_score * 0.85 + Math.random() * 15)),
-            structure: Math.min(100, Math.round(submission.originality_score * 0.95 + Math.random() * 5)),
-            creativity: Math.min(100, Math.round(submission.originality_score * 0.8 + Math.random() * 20)),
-          },
-        };
-        setCurrentResult(analysisResult);
-        refreshData();
+      // submitContent() returns IMMEDIATELY with local analysis
+      const result = submit(content, contentType, sourceUrl);
+      const { submission, analysis, onChainPromise } = result;
 
-        if (submission.is_original) {
-          toast.success(`✓ Original — Score: ${submission.originality_score}`);
-        } else {
-          toast.warning(`✗ Flagged — Score: ${submission.originality_score}`);
-        }
+      // Build the analysis result with full metrics
+      const analysisResult: AnalysisResult = {
+        originality_score: analysis.originality_score,
+        is_original: analysis.is_original,
+        reasoning: analysis.reasoning,
+        similar_sources: analysis.similar_sources,
+        metrics: analysis.metrics,
+        txStatus: submission.txStatus,
+      };
+
+      // SHOW RESULT IMMEDIATELY
+      setCurrentResult(analysisResult);
+      refreshData();
+
+      // Toast with local result
+      if (analysis.is_original) {
+        toast.success(`✓ Original — Score: ${analysis.originality_score}/100`);
+      } else {
+        toast.warning(`✗ Flagged — Score: ${analysis.originality_score}/100`);
       }
-    } catch {
-      toast.error('Submission failed');
+
+      // If on-chain was attempted, wait for it in background
+      if (onChainPromise) {
+        toast.info('📡 Broadcasting to GenLayer...');
+
+        onChainPromise.then((onChainResult) => {
+          if (onChainResult) {
+            // Update the result with tx info
+            setCurrentResult(prev => prev ? {
+              ...prev,
+              txHash: onChainResult.txHash,
+              txStatus: 'finalized',
+              key: onChainResult.key,
+            } : prev);
+
+            refreshData();
+
+            toast.success(
+              <div>
+                <div>⛓ Transaction finalized on-chain</div>
+                <a
+                  href={genlayer.getExplorerTxUrl(onChainResult.txHash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-cyan-400 hover:underline"
+                >
+                  View on Explorer ↗
+                </a>
+              </div>
+            );
+          } else {
+            setCurrentResult(prev => prev ? { ...prev, txStatus: 'failed' } : prev);
+            toast.warning('On-chain tx failed — result saved locally');
+          }
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Submission failed';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ─── APPEAL ───────────────────────────────────────────────
   const handleAppeal = async (key: string) => {
     if (!wallet.connected) {
       setShowWalletModal(true);
       return;
     }
+
     try {
       const result = await appeal(key);
       if (result) {
         refreshData();
         toast.success(`Appeal processed — New score: ${result.originality_score}`);
       }
-    } catch {
-      toast.error('Appeal failed');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Appeal failed';
+      toast.error(msg);
     }
   };
 
@@ -124,6 +186,28 @@ function App() {
         />
 
         <main className="container mx-auto px-4 py-6 max-w-7xl">
+          {/* Network Status Bar */}
+          <div className="flex items-center justify-between mb-4 px-3 py-2 rounded-lg border border-white/[0.04] bg-white/[0.01]">
+            <div className="flex items-center gap-3 text-[10px] font-mono">
+              <span className="flex items-center gap-1.5 text-cyan-400/70">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 pulse-dot"></span>
+                {wallet.connected ? 'ON-CHAIN MODE' : 'LOCAL MODE'}
+              </span>
+              <span className="text-white/20">|</span>
+              <span className="text-white/30">GenLayer Bradbury ({genlayer.CHAIN_ID})</span>
+            </div>
+            <div className="flex items-center gap-3 text-[10px] font-mono">
+              <a
+                href={genlayer.getFaucetUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-cyan-400/50 hover:text-cyan-400 transition-colors"
+              >
+                GET GEN TOKENS ↗
+              </a>
+            </div>
+          </div>
+
           {/* Stats */}
           <Stats stats={stats} />
 
@@ -167,26 +251,14 @@ function App() {
                   POWERED BY GENLAYER
                 </span>
                 <span className="text-white/5">|</span>
-                <span>AI CONSENSUS PROTOCOL</span>
+                <span>HYBRID ON-CHAIN + LOCAL</span>
               </div>
               <div className="flex items-center gap-4">
-                <a
-                  href="https://github.com/user/ContentScout"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-cyan-400/50 transition-colors"
-                >
-                  CONTENTSCOUT↗
-                </a>
+                <a href={genlayer.getExplorerContractUrl()} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400/50 transition-colors">CONTRACT↗</a>
                 <span className="text-white/5">|</span>
-                <a
-                  href="https://explorer-bradbury.genlayer.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-cyan-400/50 transition-colors"
-                >
-                  EXPLORER↗
-                </a>
+                <a href={genlayer.EXPLORER_URL} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400/50 transition-colors">EXPLORER↗</a>
+                <span className="text-white/5">|</span>
+                <a href={genlayer.getFaucetUrl()} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400/50 transition-colors">FAUCET↗</a>
               </div>
             </div>
           </div>
@@ -199,6 +271,7 @@ function App() {
           <WalletModal
             onConnect={handleConnectWallet}
             onClose={() => setShowWalletModal(false)}
+            isMetaMaskAvailable={isMetaMaskAvailable()}
           />
         )}
       </AnimatePresence>

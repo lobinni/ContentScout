@@ -1,16 +1,34 @@
 {
-  "name": "react-vite-tailwind",
-  "private": true,
-  "version": "0.0.0",
+  "name": "contentscout",
+  "version": "1.0.0",
+  "description": "AI-Powered Content Originality Scanner on GenLayer Blockchain",
+  "private": false,
   "type": "module",
+  "license": "MIT",
+  "author": "ContentScout Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/ContentScout"
+  },
+  "keywords": [
+    "originality",
+    "plagiarism",
+    "ai-detection",
+    "genlayer",
+    "blockchain",
+    "web3",
+    "content-analysis"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "clsx": "2.1.1",
     "framer-motion": "^12.40.0",
+    "genlayer-js": "^1.1.8",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "sonner": "^2.0.7",
@@ -26,5 +44,8 @@
     "typescript": "5.9.3",
     "vite": "7.3.2",
     "vite-plugin-singlefile": "2.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

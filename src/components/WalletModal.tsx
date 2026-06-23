@@ -1,12 +1,13 @@
 import { motion } from 'framer-motion';
-import { CHAIN_ID } from '../lib/genlayer';
+import { CHAIN_ID, getFaucetUrl } from '../lib/genlayer';
 
 interface WalletModalProps {
   onConnect: () => void;
   onClose: () => void;
+  isMetaMaskAvailable: boolean;
 }
 
-export default function WalletModal({ onConnect, onClose }: WalletModalProps) {
+export default function WalletModal({ onConnect, onClose, isMetaMaskAvailable }: WalletModalProps) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -66,7 +67,7 @@ export default function WalletModal({ onConnect, onClose }: WalletModalProps) {
               Connect Wallet
             </h2>
             <p className="text-xs font-mono text-white/25 mt-1.5">
-              Authenticate to submit content and earn rewards
+              Sign transactions on GenLayer Bradbury
             </p>
           </div>
 
@@ -82,50 +83,76 @@ export default function WalletModal({ onConnect, onClose }: WalletModalProps) {
             </div>
             <div className="flex justify-between text-[10px] font-mono">
               <span className="text-white/25 tracking-wider">TOKEN</span>
-              <span className="text-lime-400/70">GEN</span>
+              <span className="text-lime-400/70">GEN (Native)</span>
+            </div>
+            <div className="flex justify-between text-[10px] font-mono">
+              <span className="text-white/25 tracking-wider">TX_FEE</span>
+              <span className="text-yellow-400/70">~0.001 GEN</span>
             </div>
           </div>
 
           {/* Connect buttons */}
           <div className="space-y-2">
             {/* MetaMask */}
-            <button
-              onClick={onConnect}
-              className="group w-full flex items-center gap-3 p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-cyan-400/20 hover:bg-cyan-400/[0.03] transition-all duration-300"
-            >
-              <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-xl flex-shrink-0">
-                🦊
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-sm font-mono text-white/70 group-hover:text-cyan-400 transition-colors">
-                  MetaMask
+            {isMetaMaskAvailable ? (
+              <button
+                onClick={onConnect}
+                className="group w-full flex items-center gap-3 p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-cyan-400/20 hover:bg-cyan-400/[0.03] transition-all duration-300"
+              >
+                <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-xl flex-shrink-0">
+                  🦊
                 </div>
-                <div className="text-[10px] font-mono text-white/20">Browser extension</div>
+                <div className="flex-1 text-left">
+                  <div className="text-sm font-mono text-white/70 group-hover:text-cyan-400 transition-colors">
+                    MetaMask
+                  </div>
+                  <div className="text-[10px] font-mono text-white/20">Sign real transactions</div>
+                </div>
+                <svg className="w-4 h-4 text-white/10 group-hover:text-cyan-400/50 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            ) : (
+              <div className="w-full p-4 rounded-lg border border-red-400/20 bg-red-400/5">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-2xl">🦊</span>
+                  <div>
+                    <div className="text-sm font-mono text-red-400/80">MetaMask Not Found</div>
+                    <div className="text-[10px] font-mono text-white/20">Required for on-chain transactions</div>
+                  </div>
+                </div>
+                <a
+                  href="https://metamask.io/download/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-center py-2 rounded border border-orange-400/30 text-orange-400/80 text-xs font-mono hover:bg-orange-400/10 transition-colors"
+                >
+                  INSTALL METAMASK ↗
+                </a>
               </div>
-              <svg className="w-4 h-4 text-white/10 group-hover:text-cyan-400/50 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            )}
+          </div>
 
-            {/* WalletConnect */}
-            <button
-              disabled
-              className="w-full flex items-center gap-3 p-3 rounded-lg border border-white/[0.04] bg-white/[0.01] opacity-40 cursor-not-allowed"
+          {/* Get tokens */}
+          <div className="rounded-lg border border-lime-400/10 bg-lime-400/5 p-3">
+            <div className="flex items-center gap-2 text-[10px] font-mono text-lime-400/60 mb-2">
+              <span>💰</span>
+              <span>Need GEN tokens?</span>
+            </div>
+            <a
+              href={getFaucetUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-center py-1.5 rounded border border-lime-400/20 text-lime-400/70 text-[11px] font-mono hover:bg-lime-400/10 transition-colors"
             >
-              <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-xl flex-shrink-0">
-                🔗
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-sm font-mono text-white/40">WalletConnect</div>
-                <div className="text-[10px] font-mono text-white/15">Coming soon</div>
-              </div>
-            </button>
+              GET FREE TESTNET TOKENS ↗
+            </a>
           </div>
 
           <p className="text-center text-[10px] font-mono text-white/15 leading-relaxed">
-            No real funds required for this demo.
+            Transactions require GEN for gas fees.
             <br />
-            <span className="text-cyan-400/30">Demo wallet auto-generated on connect.</span>
+            <span className="text-cyan-400/30">Network will auto-switch on connect.</span>
           </p>
         </div>
       </motion.div>

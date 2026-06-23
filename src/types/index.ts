@@ -11,6 +11,9 @@ export interface Submission {
   similar_sources: string[];
   appealed: boolean;
   timestamp: number;
+  // On-chain status
+  txHash?: string;
+  txStatus?: 'local' | 'pending' | 'finalized' | 'failed';
 }
 
 export interface ContractStats {
@@ -39,6 +42,10 @@ export interface AnalysisResult {
     structure: number;
     creativity: number;
   };
+  // On-chain info
+  txHash?: string;
+  txStatus?: 'local' | 'pending' | 'finalized' | 'failed';
+  key?: string;
 }
 
 // Wallet Types
@@ -50,11 +57,11 @@ export interface WalletState {
 }
 
 // Transaction Types
-export type TransactionStatus = 'pending' | 'submitted' | 'finalized' | 'failed';
+export type TxStatusType = 'pending' | 'submitted' | 'finalized' | 'failed';
 
 export interface Transaction {
   hash: string;
-  status: TransactionStatus;
+  status: TxStatusType;
   method: string;
   timestamp: number;
 }

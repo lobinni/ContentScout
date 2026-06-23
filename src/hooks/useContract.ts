@@ -1,80 +1,79 @@
 /**
  * Custom hook for interacting with the ContentScout contract
- * 
- * In production with genlayer-js:
- * 
- * import { useContract } from 'genlayer-js/react';
- * 
- * const { read, write } = useContract({
- *   address: CONTRACT_ADDRESS,
- *   abi: contractAbi,
- * });
+ * Hybrid: local-first with on-chain sync
  */
 
 import { useState, useCallback } from 'react';
 import * as genlayer from '../lib/genlayer';
+import type { SubmitResult } from '../lib/genlayer';
 import { Submission, ContractStats } from '../types';
 
 export function useContract() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = useCallback(async (
+  /**
+   * Submit content — returns local result immediately
+   */
+  const submit = useCallback((
     content: string,
     contentType: string,
     sourceUrl: string
-  ): Promise<{ key: string; submission: Submission } | null> => {
-    setIsLoading(true);
+  ): SubmitResult => {
     setError(null);
-
-    try {
-      const result = await genlayer.submit(content, contentType, sourceUrl);
-      return result;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
+    return genlayer.submitContent(content, contentType, sourceUrl);
   }, []);
 
+  /**
+   * Appeal a submission
+   */
   const appeal = useCallback(async (key: string): Promise<Submission | null> => {
     setIsLoading(true);
     setError(null);
-
     try {
-      const result = await genlayer.appeal(key);
-      return result;
+      return await genlayer.appeal(key);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : 'Appeal failed');
       return null;
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const getSubmission = useCallback((key: string): Submission | null => {
-    return genlayer.getSubmission(key);
-  }, []);
-
+  /**
+   * Get all submissions (local)
+   */
   const getAllSubmissions = useCallback((): Submission[] => {
     return genlayer.getAllSubmissions();
   }, []);
 
+  /**
+   * Get contract stats (local)
+   */
   const getStats = useCallback((): ContractStats => {
     return genlayer.getStats();
   }, []);
 
-  const getRewardEligibility = useCallback((key: string) => {
-    return genlayer.readRewardEligibility(key);
+  /**
+   * Load on-chain stats (async)
+   */
+  const loadOnChainStats = useCallback(async (): Promise<ContractStats | null> => {
+    return await genlayer.loadOnChainStats();
+  }, []);
+
+  /**
+   * Get reward eligibility
+   */
+  const getRewardEligibility = useCallback(async (key: string) => {
+    return await genlayer.readRewardEligibility(key);
   }, []);
 
   return {
     submit,
     appeal,
-    getSubmission,
     getAllSubmissions,
     getStats,
+    loadOnChainStats,
     getRewardEligibility,
     isLoading,
     error,

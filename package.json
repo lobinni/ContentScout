@@ -17,13 +17,15 @@
     "genlayer",
     "blockchain",
     "web3",
-    "content-analysis"
+    "content-analysis",
+    "intelligent-contract"
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:contract": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "clsx": "2.1.1",

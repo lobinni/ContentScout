@@ -1,44 +1,62 @@
 /**
- * ContentScout — Hybrid GenLayer Integration
+ * ContentScout — GenLayer Integration
  * 
- * Works in two modes:
- * 1. ON-CHAIN: Real transactions on GenLayer Bradbury via MetaMask
- * 2. LOCAL FALLBACK: Instant results using local analyzer when on-chain unavailable
+ * Connects to the ContentScout Intelligent Contract on GenLayer.
+ * Supports both on-chain transactions and local fallback mode.
  * 
- * Results are always shown immediately via local analysis.
- * On-chain status updates asynchronously in the background.
+ * IMPORTANT: Update CONTRACT_ADDRESS after deploying your contract!
  */
 
 import { createClient } from 'genlayer-js';
-import { testnetBradbury } from 'genlayer-js/chains';
+import { testnetAsimov } from 'genlayer-js/chains';
 import { TransactionStatus } from 'genlayer-js/types';
 import { Submission, ContractStats, RewardEligibility } from '../types';
 import { analyzeOriginality } from './analyzer';
 
-// ─── Constants ──────────────────────────────────────────────
-export const CONTRACT_ADDRESS = '0xEDf0e9B44b609f63aE17d1345C1e5dDF81000BdE';
-export const CHAIN_ID = 4221;
-export const PLAGIARISM_THRESHOLD = 40;
-export const RPC_ENDPOINT = 'https://rpc-bradbury.genlayer.com';
-export const EXPLORER_URL = 'https://explorer-bradbury.genlayer.com';
+// ═══════════════════════════════════════════════════════════
+// CONFIGURATION — Update these after deploying your contract!
+// ═══════════════════════════════════════════════════════════
 
-// ─── State ──────────────────────────────────────────────────
+// Contract address - update after deployment or set via VITE_CONTRACT_ADDRESS env var
+export const CONTRACT_ADDRESS = 
+  import.meta.env.VITE_CONTRACT_ADDRESS || 
+  '0x0000000000000000000000000000000000000000';
+
+// Network configuration
+export const CHAIN_ID = 4220; // testnet-asimov (use 4221 for bradbury)
+export const CHAIN = testnetAsimov;
+export const RPC_ENDPOINT = 'https://rpc.genlayer.com';
+export const EXPLORER_URL = 'https://explorer.genlayer.com';
+
+// Scoring threshold
+export const PLAGIARISM_THRESHOLD = 40;
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+
 let client: ReturnType<typeof createClient> | null = null;
 let connectedAddress: string | null = null;
 
-// Local submissions store (always works, even without blockchain)
-let localSubmissions: Submission[] = [];
+// Local submissions store (fallback when contract unavailable)
+const localSubmissions: Submission[] = [];
 let localSubmissionCount = 0;
 let localTotalRewarded = 0;
 let localTotalRejected = 0;
 
-// ─── MetaMask Helpers ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
 
 export function isMetaMaskAvailable(): boolean {
   return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
 }
 
-async function switchToGenLayerNetwork(): Promise<void> {
+export function isContractConfigured(): boolean {
+  return CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000';
+}
+
+async function switchNetwork(): Promise<void> {
   if (!window.ethereum) return;
   try {
     await window.ethereum.request({
@@ -51,7 +69,7 @@ async function switchToGenLayerNetwork(): Promise<void> {
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: `0x${CHAIN_ID.toString(16)}`,
-          chainName: 'GenLayer Bradbury',
+          chainName: 'GenLayer Testnet',
           nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
           rpcUrls: [RPC_ENDPOINT],
           blockExplorerUrls: [EXPLORER_URL],
@@ -61,7 +79,9 @@ async function switchToGenLayerNetwork(): Promise<void> {
   }
 }
 
-// ─── Wallet ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// WALLET CONNECTION
+// ═══════════════════════════════════════════════════════════
 
 export async function connectWallet(): Promise<string> {
   if (!isMetaMaskAvailable()) {
@@ -77,30 +97,27 @@ export async function connectWallet(): Promise<string> {
   const address = accounts[0];
 
   try {
-    const chainId = parseInt(
-      await window.ethereum!.request({ method: 'eth_chainId' }) as string,
-      16
-    );
-    if (chainId !== CHAIN_ID) await switchToGenLayerNetwork();
+    await switchNetwork();
   } catch (e) {
     console.warn('Network switch failed:', e);
   }
 
   // Create GenLayer client
   client = createClient({
-    chain: testnetBradbury,
+    chain: CHAIN,
     account: address as `0x${string}`,
   });
 
   connectedAddress = address;
 
+  // Listen for account changes
   window.ethereum!.on('accountsChanged', (accs: string[]) => {
     if (!accs.length) {
       disconnectWallet();
     } else {
       connectedAddress = accs[0];
       client = createClient({
-        chain: testnetBradbury,
+        chain: CHAIN,
         account: accs[0] as `0x${string}`,
       });
     }
@@ -131,7 +148,9 @@ export async function getBalance(): Promise<string> {
   }
 }
 
-// ─── Submit (Hybrid: local first, then on-chain) ────────────
+// ═══════════════════════════════════════════════════════════
+// SUBMIT CONTENT
+// ═══════════════════════════════════════════════════════════
 
 export interface SubmitResult {
   submission: Submission;
@@ -148,7 +167,7 @@ export function submitContent(
 ): SubmitResult {
   const truncated = content.slice(0, 4000);
 
-  // 1) Run local analysis IMMEDIATELY
+  // 1) Run local analysis immediately
   const analysis = analyzeOriginality(truncated, contentType, sourceUrl);
 
   // 2) Create local submission record
@@ -177,18 +196,16 @@ export function submitContent(
     localTotalRejected++;
   }
 
-  // Store locally
   localSubmissions.unshift(submission);
 
-  // 3) If wallet connected, also submit on-chain in background
+  // 3) If contract is configured and wallet connected, submit on-chain
   let onChainPromise: Promise<{ txHash: string; key: string } | null> | undefined;
 
-  if (client && connectedAddress) {
+  if (client && connectedAddress && isContractConfigured()) {
     submission.txStatus = 'pending';
 
     onChainPromise = submitOnChain(truncated, contentType, sourceUrl)
       .then((result) => {
-        // Update local submission with on-chain data
         submission.txHash = result.txHash;
         submission.txStatus = 'finalized';
         submission.key = result.key;
@@ -234,10 +251,11 @@ async function submitOnChain(
   return { txHash, key };
 }
 
-// ─── Appeal ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// APPEAL
+// ═══════════════════════════════════════════════════════════
 
 export async function appeal(key: string): Promise<Submission | null> {
-  // Find the local submission
   const sub = localSubmissions.find(s => s.key === key);
 
   if (sub) {
@@ -261,8 +279,8 @@ export async function appeal(key: string): Promise<Submission | null> {
       else { localTotalRewarded--; localTotalRejected++; }
     }
 
-    // Try on-chain appeal in background
-    if (client && !key.startsWith('local-')) {
+    // Try on-chain appeal
+    if (client && isContractConfigured() && !key.startsWith('local-')) {
       try {
         await client.writeContract({
           address: CONTRACT_ADDRESS as `0x${string}`,
@@ -281,7 +299,9 @@ export async function appeal(key: string): Promise<Submission | null> {
   return null;
 }
 
-// ─── Read Methods ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// READ METHODS
+// ═══════════════════════════════════════════════════════════
 
 export function getAllSubmissions(): Submission[] {
   return [...localSubmissions];
@@ -295,13 +315,37 @@ export function getStats(): ContractStats {
   };
 }
 
+export async function loadOnChainStats(): Promise<ContractStats | null> {
+  if (!isContractConfigured()) return null;
+  
+  try {
+    const readClient = createClient({ chain: CHAIN });
+    const result = await readClient.readContract({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      functionName: 'stats',
+      args: [],
+    });
+    if (!result) return null;
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    return {
+      submission_count: Number(data.submission_count || 0),
+      total_rewarded: Number(data.total_rewarded || 0),
+      total_rejected: Number(data.total_rejected || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getSubmission(key: string): Promise<Submission | null> {
   // Check local first
   const local = localSubmissions.find(s => s.key === key);
   if (local) return local;
 
   // Try on-chain
-  const readClient = client || createClient({ chain: testnetBradbury });
+  if (!isContractConfigured()) return null;
+  
+  const readClient = client || createClient({ chain: CHAIN });
   try {
     const result = await readClient.readContract({
       address: CONTRACT_ADDRESS as `0x${string}`,
@@ -330,7 +374,6 @@ export async function getSubmission(key: string): Promise<Submission | null> {
 }
 
 export async function readRewardEligibility(key: string): Promise<RewardEligibility | null> {
-  // Check local
   const sub = localSubmissions.find(s => s.key === key);
   if (sub) {
     return {
@@ -344,28 +387,9 @@ export async function readRewardEligibility(key: string): Promise<RewardEligibil
   return null;
 }
 
-// Try loading on-chain stats at startup
-export async function loadOnChainStats(): Promise<ContractStats | null> {
-  try {
-    const readClient = createClient({ chain: testnetBradbury });
-    const result = await readClient.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      functionName: 'stats',
-      args: [],
-    });
-    if (!result) return null;
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
-    return {
-      submission_count: Number(data.submission_count || 0),
-      total_rewarded: Number(data.total_rewarded || 0),
-      total_rejected: Number(data.total_rejected || 0),
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ─── Utility ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// UTILITY
+// ═══════════════════════════════════════════════════════════
 
 export function formatAddress(address: string): string {
   if (!address) return '';
@@ -384,7 +408,7 @@ export function getFaucetUrl(): string {
   return 'https://faucet.genlayer.com';
 }
 
-// ─── Window type extension ──────────────────────────────────
+// Window type extension
 declare global {
   interface Window {
     ethereum?: {

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { WalletState } from '../types';
-import { formatAddress, CHAIN_ID } from '../lib/genlayer';
+import { formatAddress, CHAIN_ID, isContractConfigured } from '../lib/genlayer';
 
 interface HeaderProps {
   wallet: WalletState;
@@ -14,11 +14,18 @@ export default function Header({ wallet, onConnectClick, onDisconnect }: HeaderP
       <div className="container mx-auto px-5 max-w-7xl">
         {/* Top micro-bar */}
         <div className="flex items-center justify-between py-1 border-b border-white/5 text-[10px] font-mono text-white/25 tracking-wider">
-          <span>SYS.CONTENT_SCOUT v2.0</span>
+          <div className="flex items-center">
+            <span>SYS.CONTENT_SCOUT v1.0</span>
+            {!isContractConfigured() && (
+              <span className="ml-2 px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400/80 rounded text-[9px]">
+                LOCAL MODE
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 pulse-dot"></span>
-              NETWORK: BRADBURY ({CHAIN_ID})
+              NETWORK: GENLAYER ({CHAIN_ID})
             </span>
             <span>THRESHOLD: 40</span>
           </div>

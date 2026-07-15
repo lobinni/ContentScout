@@ -6,7 +6,7 @@ AI-Powered Content Originality Scanner deployed on **GenLayer Studio Blockchain*
 
 ## 🔗 Live Demo
 
-**[contentscout.vercel.app](https://contentscout.vercel.app)**
+**[contentscout-umber.vercel.app](https://contentscout-umber.vercel.app/)**
 
 ## 📜 Contract
 

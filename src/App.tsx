@@ -9,6 +9,7 @@ import PendingJudgment from './components/PendingJudgment';
 import SubmissionList from './components/SubmissionList';
 import StatsBar from './components/StatsBar';
 import WalletModal from './components/WalletModal';
+import HowToUse from './components/HowToUse';
 
 import {
   connectWallet,
@@ -32,11 +33,8 @@ import type {
 } from './types';
 
 function App() {
-  // ─── STATE ──────────────────────────────────────────────
   const [wallet, setWallet] = useState<WalletState>({
-    connected: false,
-    address: null,
-    balance: '0',
+    connected: false, address: null, balance: '0',
   });
 
   const [stats, setStats] = useState<ContractStats | null>(null);
@@ -50,6 +48,7 @@ function App() {
   const [submissionKeys, setSubmissionKeys] = useState<string[]>([]);
 
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showHowToUse, setShowHowToUse] = useState(false);
 
   // ─── LOAD STATS FROM CONTRACT ───────────────────────────
   const refreshStats = useCallback(async () => {
@@ -71,7 +70,7 @@ function App() {
     });
   }, [refreshStats]);
 
-  // ─── WALLET CONNECTION ──────────────────────────────────
+  // ─── WALLET ─────────────────────────────────────────────
   const handleConnectWallet = async () => {
     try {
       const address = await connectWallet();
@@ -92,34 +91,27 @@ function App() {
     toast.info('Wallet disconnected');
   };
 
-  // ─── SUBMIT — CONTRACT-AUTHORITATIVE FLOW ───────────────
+  // ─── SUBMIT — CONTRACT-AUTHORITATIVE ────────────────────
   const handleSubmit = async (content: string, contentType: string, sourceUrl: string) => {
-    if (!wallet.connected) {
-      setShowWalletModal(true);
-      return;
-    }
+    if (!wallet.connected) { setShowWalletModal(true); return; }
 
     setIsSubmitting(true);
     setCurrentResult(null);
     setSubmissionPhase('submitting');
 
     try {
-      // This function:
-      // 1. Sends tx to contract → MetaMask shows gas fee
+      // 1. Sends tx → MetaMask shows gas
       // 2. Waits for FINALIZED consensus (AI validators)
       // 3. Reads get_submission() from contract
       // 4. Returns ONLY the contract's judgment
       // NO LOCAL HEURISTIC IS USED AT ANY POINT
       const result = await submitContent(
-        content,
-        contentType,
-        sourceUrl,
+        content, contentType, sourceUrl,
         (phase) => setSubmissionPhase(phase as SubmissionPhase),
       );
 
       setCurrentResult(result);
       setSubmissionPhase('complete');
-
       refreshStats();
       setSubmissionKeys(getSubmissionKeys());
 
@@ -144,21 +136,17 @@ function App() {
     }
   };
 
-  // ─── APPEAL — CONTRACT-AUTHORITATIVE FLOW ───────────────
+  // ─── APPEAL — CONTRACT-AUTHORITATIVE ────────────────────
   const handleAppeal = async (key: string) => {
-    if (!wallet.connected) {
-      setShowWalletModal(true);
-      return;
-    }
+    if (!wallet.connected) { setShowWalletModal(true); return; }
 
     setIsAppealing(true);
-    setCurrentResult(null); // Clear previous result — no local substitute shown
+    setCurrentResult(null);
     setSubmissionPhase('submitting');
 
     try {
-      // This function:
-      // 1. Sends appeal tx to contract → MetaMask shows gas fee
-      // 2. Waits for FINALIZED re-consensus (AI validators re-judge)
+      // 1. Sends appeal tx → MetaMask shows gas
+      // 2. Waits for FINALIZED re-consensus
       // 3. Reads get_submission() from contract
       // 4. Returns ONLY the contract's updated judgment
       // NO LOCAL HEURISTIC IS USED AT ANY POINT
@@ -168,16 +156,12 @@ function App() {
 
       setCurrentResult(result);
       setSubmissionPhase('complete');
-
       refreshStats();
 
       if (result.authority === 'contract') {
         toast.success(`Appeal Judgment: Score ${result.originality_score}/100 — ${result.is_original ? 'ORIGINAL' : 'FLAGGED'}`);
-        if (result.validationWarnings && result.validationWarnings.length > 0) {
-          toast.warning(`⚠ ${result.validationWarnings.length} validation warning(s)`);
-        }
       } else {
-        toast.error('Failed to read appeal result from contract — no local substitute available');
+        toast.error('Failed to read appeal result from contract');
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Appeal failed';
@@ -188,54 +172,43 @@ function App() {
     }
   };
 
-  // ─── Select submission from list → read from contract ───
+  // ─── SELECT → always re-read from contract ─────────────
   const handleSelectSubmission = async (sub: Submission | null) => {
     if (!sub) return;
 
-    // ALWAYS re-read from contract to ensure we have the latest
-    // AUTHORITATIVE judgment. Never display cached/local data.
     setSubmissionPhase('reading_result');
     const fresh = await readSubmissionFromContract(sub.key);
 
     if (fresh) {
-      // Apply validation warnings (same as submit/appeal flows)
       const validationWarnings = validateSubmission(fresh);
       const enforcedOriginal = fresh.originality_score >= 40;
-
       setCurrentResult({
         originality_score: fresh.originality_score,
-        is_original: enforcedOriginal, // FAIL-CLOSED: always derived from score
+        is_original: enforcedOriginal,
         reasoning: fresh.reasoning,
         similar_sources: fresh.similar_sources,
         authority: 'contract',
         key: fresh.key,
         validationWarnings,
       });
-      setSubmissionPhase('complete');
     } else {
       setCurrentResult({
-        originality_score: 0,
-        is_original: false,
+        originality_score: 0, is_original: false,
         reasoning: 'Could not read this submission from the contract. No local substitute is available.',
-        similar_sources: [],
-        authority: 'error',
-        key: sub.key,
+        similar_sources: [], authority: 'error', key: sub.key,
         validationWarnings: ['Contract read failed — no local heuristic is substituted'],
       });
-      setSubmissionPhase('complete');
     }
+    setSubmissionPhase('complete');
   };
 
-  // ─── Determine if pending animation should show ─────────
   const showPending = submissionPhase === 'reading_state' ||
     submissionPhase === 'submitting' ||
     submissionPhase === 'awaiting_consensus' ||
     submissionPhase === 'reading_result';
 
-  // ─── RENDER ─────────────────────────────────────────────
   return (
     <div className="min-h-screen relative">
-      {/* Background */}
       <div className="fixed inset-0 bg-gradient-to-b from-[#050508] via-[#080812] to-[#050508]" />
       <div className="fixed inset-0 grid-bg" />
       <div className="noise-overlay" />
@@ -248,7 +221,7 @@ function App() {
         />
 
         <main className="container mx-auto px-5 max-w-7xl py-5 space-y-5">
-          {/* Network status */}
+          {/* Network status + How to Use button */}
           <div className="flex items-center justify-center gap-3 py-2">
             <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/[0.04] bg-white/[0.01]">
               <span className={`w-1.5 h-1.5 rounded-full ${wallet.connected ? 'bg-cyan-400 pulse-dot' : 'bg-white/20'}`}></span>
@@ -257,9 +230,16 @@ function App() {
               </span>
               <span className="text-[10px] font-mono text-white/8">|</span>
               <span className="text-[10px] font-mono text-white/15">
-                Contract: 0x1416...7c22
+                Contract: 0x3E5a...D97a
               </span>
             </div>
+            <button
+              onClick={() => setShowHowToUse(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cyan-400/15 bg-cyan-400/[0.04] hover:bg-cyan-400/[0.08] hover:border-cyan-400/30 transition-all text-[10px] font-mono text-cyan-400/50 hover:text-cyan-400/80"
+            >
+              <span>❓</span>
+              <span>How to Use</span>
+            </button>
           </div>
 
           {/* Stats */}
@@ -267,23 +247,19 @@ function App() {
 
           {/* Main grid */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-            {/* Left column — Form + Result */}
             <div className="lg:col-span-3 space-y-5">
-              {/* Submit form */}
               <SubmitForm
                 onSubmit={handleSubmit}
                 isSubmitting={isSubmitting || isAppealing}
                 disabled={!wallet.connected}
               />
 
-              {/* Pending judgment — shown during submit AND appeal */}
               <AnimatePresence mode="wait">
                 {showPending && (
                   <PendingJudgment key="pending" phase={submissionPhase} />
                 )}
               </AnimatePresence>
 
-              {/* Contract-authoritative result */}
               <AnimatePresence>
                 {currentResult && submissionPhase === 'complete' && (
                   <AnalysisResultPanel
@@ -294,25 +270,17 @@ function App() {
                 )}
               </AnimatePresence>
 
-              {/* Error state */}
               {submissionPhase === 'failed' && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="rounded-xl border border-red-400/10 bg-red-400/[0.02] p-5 text-center"
-                >
-                  <p className="text-sm font-mono text-red-400/60">
-                    ✗ Submission failed. Please try again.
-                  </p>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="rounded-xl border border-red-400/10 bg-red-400/[0.02] p-5 text-center">
+                  <p className="text-sm font-mono text-red-400/60">✗ Submission failed. Please try again.</p>
                   <p className="text-[10px] font-mono text-white/15 mt-2">
                     Ensure your wallet is connected to GenLayer Studio (Chain ID: 61999) and has GEN for gas.
-                    No local analysis is provided as a substitute.
                   </p>
                 </motion.div>
               )}
             </div>
 
-            {/* Right column — Submission list */}
             <div className="lg:col-span-2">
               <SubmissionList
                 submissionKeys={submissionKeys}
@@ -329,41 +297,39 @@ function App() {
         <footer className="border-t border-white/[0.03] py-4 mt-10">
           <div className="container mx-auto px-5 max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2">
             <span className="text-[10px] font-mono text-white/10">
-              ContentScout v2.0 · Contract-Authoritative · Fail-Closed · No Local Heuristic
+              ContentScout v2.0 · Contract-Authoritative · Fail-Closed
             </span>
             <div className="flex items-center gap-4">
-              <a
-                href="https://studio.genlayer.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors"
-              >
+              <button onClick={() => setShowHowToUse(true)} className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors">
+                How to Use
+              </button>
+              <a href="https://studio.genlayer.com" target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors">
                 GenLayer Studio
               </a>
-              <a
-                href="https://explorer-studio.genlayer.com/address/0x141666BB3C83D10a2CC0bA2d42aE8973a2B47c22"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors"
-              >
+              <a href="https://explorer-studio.genlayer.com/address/0x3E5a8398d07915871080A072241a4D71F652D97a" target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors">
                 View Contract
+              </a>
+              <a href="https://github.com/lobinni/ContentScout" target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono text-cyan-400/20 hover:text-cyan-400/50 transition-colors">
+                GitHub
               </a>
             </div>
           </div>
         </footer>
       </div>
 
-      {/* Wallet Modal */}
+      {/* Modals */}
       <AnimatePresence>
         {showWalletModal && (
-          <WalletModal
-            onClose={() => setShowWalletModal(false)}
-            onConnect={handleConnectWallet}
-          />
+          <WalletModal onClose={() => setShowWalletModal(false)} onConnect={handleConnectWallet} />
         )}
       </AnimatePresence>
 
-      {/* Toast */}
+      <AnimatePresence>
+        {showHowToUse && (
+          <HowToUse onClose={() => setShowHowToUse(false)} />
+        )}
+      </AnimatePresence>
+
       <Toaster
         position="bottom-right"
         toastOptions={{

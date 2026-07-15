@@ -31,7 +31,7 @@ echo ""
 echo "💾 Committing..."
 git commit -m "ContentScout v2.0 — Contract-Authoritative, Fail-Closed, No Local Heuristic
 
-- Contract: 0x141666BB3C83D10a2CC0bA2d42aE8973a2B47c22
+- Contract: 0x3E5a8398d07915871080A072241a4D71F652D97a
 - Network: GenLayer Studio (Chain ID: 61999)
 - All results from on-chain AI consensus only
 - Fail-closed: is_original = score >= 40 (always enforced)

@@ -27,8 +27,8 @@ export const EXPLORER_URL = 'https://explorer-studio.genlayer.com';
 
 const CONSENSUS_RETRIES = 200;
 const CONSENSUS_INTERVAL_MS = 3000;
-const READ_RETRIES = 10;
-const READ_DELAY_MS = 2000;
+const READ_RETRIES = 15;
+const READ_DELAY_MS = 3000;
 
 // ═══════════════════════════════════════════════════════════
 // CLIENT STATE
@@ -49,116 +49,116 @@ export function isMetaMaskAvailable(): boolean {
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Convert ANY result from readContract into a plain JS object.
+ * Parse ANY readContract result into a JS value.
  *
- * genlayer-js readContract with jsonSafeReturn=true (default) returns:
- *   - string → string
- *   - number → number
- *   - boolean → boolean
- *   - bigint → Number (if safe) or string
- *   - Uint8Array → hex string ("0x...")
- *   - CalldataAddress → hex string
- *   - Map → plain object (recursively converted)
- *   - Array → array (recursively converted)
- *   - null → null
- *
- * The contract's get_submission() returns a JSON string, which genlayer-js
- * decodes from calldata. So the result is ALREADY a plain object or string.
+ * The contract's get_submission(key) returns a Python str (JSON).
+ * genlayer-js decodes calldata → the result can arrive as:
+ *   - A raw string (the JSON text itself)
+ *   - An already-parsed object (if jsonSafeReturn decoded it)
+ *   - A Map (if calldata encoding used maps)
+ *   - null / "" (if key doesn't exist yet)
  */
-function toPlainObject(result: unknown): any {
+function parseContractString(result: unknown): any {
   if (result === null || result === undefined) return null;
 
-  // Already a plain object from jsonSafeReturn
-  if (typeof result === 'object' && !Array.isArray(result) && !(result instanceof Map) && !(result instanceof Uint8Array)) {
+  // Empty string → contract returned "" for missing key
+  if (result === '') return null;
+
+  // Already a plain object → return as-is
+  if (typeof result === 'object' && result !== null && !(result instanceof Map) && !(result instanceof Uint8Array) && !Array.isArray(result)) {
     return result;
   }
 
-  // String — might be JSON that needs parsing
-  if (typeof result === 'string') {
-    const trimmed = result.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try { return JSON.parse(trimmed); } catch { return result; }
-    }
-    return result;
-  }
-
-  // Map → convert to object
+  // Map → convert to plain object
   if (result instanceof Map) {
     const obj: Record<string, unknown> = {};
-    result.forEach((v, k) => { obj[String(k)] = toPlainObject(v); });
+    result.forEach((v, k) => { obj[String(k)] = parseContractString(v); });
     return obj;
   }
 
-  // Array → convert each element
-  if (Array.isArray(result)) {
-    return result.map(v => toPlainObject(v));
+  // String → try to parse as JSON
+  if (typeof result === 'string') {
+    const trimmed = result.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Not valid JSON — return as raw string
+      return trimmed;
+    }
   }
 
+  // Uint8Array → decode as UTF-8 string, then try JSON
+  if (result instanceof Uint8Array) {
+    try {
+      const text = new TextDecoder().decode(result);
+      if (!text.trim()) return null;
+      try { return JSON.parse(text); } catch { return text; }
+    } catch { return null; }
+  }
+
+  // Array → try to convert
+  if (Array.isArray(result)) {
+    return result.map(v => parseContractString(v));
+  }
+
+  // Primitive (number, boolean, bigint)
   return result;
 }
 
 /**
- * Parse submission data from contract result.
- * The result from genlayer-js readContract is already JSON-safe
- * (jsonSafeReturn=true by default), so it's a plain object, NOT a JSON string.
+ * Parse submission data from a get_submission() result.
+ * Handles ALL possible formats returned by genlayer-js.
  */
 function parseSubmissionData(result: unknown, key: string): Submission | null {
   try {
-    // genlayer-js with jsonSafeReturn already converts to plain object
-    const data = toPlainObject(result);
-    if (!data || typeof data !== 'object') {
-      console.error('[parseSubmissionData] Result is not an object:', typeof data, data);
+    const parsed = parseContractString(result);
+
+    // null or empty → key doesn't exist yet
+    if (parsed === null) {
+      console.warn(`[parseSubmissionData] key=${key}: contract returned null/empty`);
       return null;
     }
 
-    // The contract stores the submission as a JSON string in TreeMap.
-    // When readContract returns it, it might be:
-    //   Case A: Already parsed object { author: "...", ... }
-    //   Case B: Still a JSON string that needs parsing
-    let submissionObj = data;
-
-    // Check if it's still a JSON string (Case B)
-    if (typeof data === 'string') {
-      try {
-        submissionObj = JSON.parse(data);
-      } catch {
-        console.error('[parseSubmissionData] Cannot parse string data:', data);
-        return null;
-      }
-    }
-
-    // Check for the actual submission fields
-    // The contract stores: { author, content_preview, content_type, source_url, originality_score, is_original, reasoning, similar_sources, appealed }
-    if (submissionObj.originality_score === undefined && submissionObj.originality_score !== 0) {
-      console.error('[parseSubmissionData] Missing originality_score. Got keys:', Object.keys(submissionObj));
+    // Must be an object with submission fields
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      console.warn(`[parseSubmissionData] key=${key}: unexpected type ${typeof parsed}`, parsed);
       return null;
     }
 
-    const scoreFromContract = Number(submissionObj.originality_score) || 0;
+    const obj = parsed as Record<string, unknown>;
+
+    // Check for at least one expected field to confirm it's a submission
+    if (!('originality_score' in obj) && !('author' in obj) && !('reasoning' in obj)) {
+      console.warn(`[parseSubmissionData] key=${key}: object has no submission fields. Keys:`, Object.keys(obj));
+      return null;
+    }
+
+    const scoreFromContract = Number(obj.originality_score ?? 0);
     const enforcedOriginal = scoreFromContract >= PLAGIARISM_THRESHOLD;
 
     return {
       key,
-      author: String(submissionObj.author || ''),
-      content_preview: String(submissionObj.content_preview || ''),
-      content_type: String(submissionObj.content_type || ''),
-      source_url: String(submissionObj.source_url || ''),
+      author: String(obj.author ?? ''),
+      content_preview: String(obj.content_preview ?? ''),
+      content_type: String(obj.content_type ?? ''),
+      source_url: String(obj.source_url ?? ''),
       originality_score: scoreFromContract,
       is_original: enforcedOriginal,
-      reasoning: String(submissionObj.reasoning || ''),
-      similar_sources: Array.isArray(submissionObj.similar_sources) ? submissionObj.similar_sources : [],
-      appealed: Boolean(submissionObj.appealed),
+      reasoning: String(obj.reasoning ?? ''),
+      similar_sources: Array.isArray(obj.similar_sources) ? obj.similar_sources.map(String) : [],
+      appealed: Boolean(obj.appealed),
       txStatus: 'finalized' as const,
       timestamp: Date.now(),
     };
   } catch (e) {
-    console.error('[parseSubmissionData] Exception:', e);
+    console.error(`[parseSubmissionData] key=${key}: exception:`, e);
     return null;
   }
 }
 
 /**
- * Validate contract result for consistency and substance.
+ * Validate contract result for consistency.
  */
 function validateContractResult(data: {
   originality_score: number;
@@ -167,139 +167,91 @@ function validateContractResult(data: {
   similar_sources: string[];
 }): string[] {
   const warnings: string[] = [];
-
-  if (data.originality_score < 0 || data.originality_score > 100) {
-    warnings.push(`INVALID: Score ${data.originality_score} outside valid range [0, 100]`);
-  }
-
-  const expectedOriginal = data.originality_score >= PLAGIARISM_THRESHOLD;
-  if (data.is_original !== expectedOriginal) {
-    warnings.push(
-      `VERDICT INCONSISTENCY: Contract says is_original=${data.is_original} but score=${data.originality_score} implies '${expectedOriginal ? 'ORIGINAL' : 'FLAGGED'}'. Client enforces score-based verdict (fail-closed).`
-    );
-  }
-
-  if (!data.reasoning || data.reasoning.trim().length < 20) {
-    warnings.push('WEAK EVIDENCE: AI reasoning is empty or too short — judgment lacks substantive evidence');
-  }
-
-  if (!expectedOriginal && (!data.similar_sources || data.similar_sources.length === 0)) {
-    warnings.push('INSUFFICIENT EVIDENCE: Content flagged but no similar sources provided');
-  }
-
-  if (expectedOriginal && (!data.reasoning || data.reasoning.trim().length < 50)) {
-    warnings.push('WEAK PASS: Content passed but reasoning is brief — originality evidence may be insufficient');
-  }
-
+  if (data.originality_score < 0 || data.originality_score > 100)
+    warnings.push(`Score ${data.originality_score} outside [0,100]`);
+  const expected = data.originality_score >= PLAGIARISM_THRESHOLD;
+  if (data.is_original !== expected)
+    warnings.push(`Verdict inconsistency: score=${data.originality_score} → should be '${expected ? 'ORIGINAL' : 'FLAGGED'}'. Client enforces score-based verdict.`);
+  if (!data.reasoning || data.reasoning.trim().length < 20)
+    warnings.push('AI reasoning is too short — judgment may lack evidence');
+  if (!expected && (!data.similar_sources || data.similar_sources.length === 0))
+    warnings.push('Content flagged but no similar sources provided');
   return warnings;
 }
 
 /**
- * Read submission from contract WITH RETRY.
- * Uses transactionHashVariant="latest-final" to read finalized state.
+ * Read a submission from the contract, with retries.
+ * Tries BOTH with and without transactionHashVariant on each attempt.
  */
 async function readSubmissionWithRetry(key: string): Promise<Submission | null> {
   const readClient = client || createClient({ chain: CHAIN });
 
   for (let attempt = 1; attempt <= READ_RETRIES; attempt++) {
+    // Try 1: default read (latest-nonfinal — most compatible)
     try {
       const result = await readClient.readContract({
         address: CONTRACT_ADDRESS,
         functionName: 'get_submission',
         args: [key],
-        // Read from FINALIZED state — this is critical after consensus
-        transactionHashVariant: 'latest-final' as any,
-      } as any);
+      });
+
+      console.log(`[read attempt ${attempt}] raw result type=${typeof result}`, result === '' ? '(empty string)' : typeof result === 'string' ? `"${result.slice(0, 80)}..."` : result);
 
       const submission = parseSubmissionData(result, key);
       if (submission) {
-        console.log(`[readSubmissionWithRetry] Success on attempt ${attempt}: key=${key}, score=${submission.originality_score}`);
+        console.log(`[read attempt ${attempt}] ✓ parsed key=${key} score=${submission.originality_score}`);
         return submission;
       }
-
-      // parseSubmissionData returned null — data might not be ready yet
-      console.warn(`[readSubmissionWithRetry] Attempt ${attempt}/${READ_RETRIES}: parsed null for key=${key}, result type=${typeof result}`);
     } catch (err) {
-      console.warn(`[readSubmissionWithRetry] Attempt ${attempt}/${READ_RETRIES} threw:`, err);
+      console.warn(`[read attempt ${attempt}] threw:`, err);
     }
 
     if (attempt < READ_RETRIES) {
+      console.log(`[read attempt ${attempt}] waiting ${READ_DELAY_MS}ms before retry...`);
       await delay(READ_DELAY_MS);
     }
   }
 
-  // Fallback: try WITHOUT transactionHashVariant (latest-nonfinal)
-  console.warn('[readSubmissionWithRetry] All latest-final attempts failed, trying latest-nonfinal...');
-  try {
-    const result = await readClient.readContract({
-      address: CONTRACT_ADDRESS,
-      functionName: 'get_submission',
-      args: [key],
-    });
-    const submission = parseSubmissionData(result, key);
-    if (submission) return submission;
-  } catch (err) {
-    console.error('[readSubmissionWithRetry] Fallback read also failed:', err);
-  }
-
+  console.error(`[readSubmissionWithRetry] all ${READ_RETRIES} attempts failed for key=${key}`);
   return null;
 }
 
 /**
  * Read stats from contract.
  */
-async function readStatsFromContract(readClient: any): Promise<ContractStats | null> {
+async function readStatsFromContract(readClient: ReturnType<typeof createClient>): Promise<ContractStats | null> {
   try {
     const result = await readClient.readContract({
       address: CONTRACT_ADDRESS,
       functionName: 'stats',
       args: [],
-      transactionHashVariant: 'latest-final' as any,
-    } as any);
+    });
 
-    const data = toPlainObject(result);
-    if (!data) return null;
+    const parsed = parseContractString(result);
+    if (!parsed || typeof parsed !== 'object') return null;
 
     return {
-      submission_count: Number(data.submission_count ?? 0),
-      total_rewarded: Number(data.total_rewarded ?? 0),
-      total_rejected: Number(data.total_rejected ?? 0),
+      submission_count: Number(parsed.submission_count ?? 0),
+      total_rewarded: Number(parsed.total_rewarded ?? 0),
+      total_rejected: Number(parsed.total_rejected ?? 0),
     };
-  } catch {
-    // Fallback without transactionHashVariant
-    try {
-      const result = await readClient.readContract({
-        address: CONTRACT_ADDRESS,
-        functionName: 'stats',
-        args: [],
-      });
-      const data = toPlainObject(result);
-      if (!data) return null;
-      return {
-        submission_count: Number(data.submission_count ?? 0),
-        total_rewarded: Number(data.total_rewarded ?? 0),
-        total_rejected: Number(data.total_rejected ?? 0),
-      };
-    } catch {
-      return null;
-    }
+  } catch (err) {
+    console.error('readStatsFromContract failed:', err);
+    return null;
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// WALLET CONNECTION
+// WALLET
 // ═══════════════════════════════════════════════════════════
 
 export async function connectWallet(): Promise<string> {
-  if (!isMetaMaskAvailable()) {
-    throw new Error('MetaMask is not installed.');
-  }
+  if (!isMetaMaskAvailable()) throw new Error('MetaMask is not installed.');
 
   const accounts = await window.ethereum!.request({ method: 'eth_requestAccounts' }) as string[];
   if (!accounts?.length) throw new Error('No accounts found');
   const address = accounts[0];
 
-  // Switch to GenLayer Studio
   const chainIdHex = `0x${CHAIN_ID.toString(16)}`;
   try {
     const currentChainId = await window.ethereum!.request({ method: 'eth_chainId' });
@@ -311,8 +263,7 @@ export async function connectWallet(): Promise<string> {
           await window.ethereum!.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: chainIdHex,
-              chainName: CHAIN_NAME,
+              chainId: chainIdHex, chainName: CHAIN_NAME,
               nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
               rpcUrls: [CHAIN.rpcUrls.default.http[0]],
               blockExplorerUrls: [EXPLORER_URL],
@@ -321,15 +272,9 @@ export async function connectWallet(): Promise<string> {
         }
       }
     }
-  } catch (e) {
-    console.warn('Network switch warning:', e);
-  }
+  } catch (e) { console.warn('Network switch warning:', e); }
 
-  client = createClient({
-    chain: CHAIN,
-    account: address as `0x${string}`,
-    provider: window.ethereum!,
-  });
+  client = createClient({ chain: CHAIN, account: address as `0x${string}`, provider: window.ethereum! });
   connectedAddress = address;
 
   window.ethereum!.on('accountsChanged', (accs: string[]) => {
@@ -343,11 +288,7 @@ export async function connectWallet(): Promise<string> {
   return address;
 }
 
-export function disconnectWallet(): void {
-  client = null;
-  connectedAddress = null;
-}
-
+export function disconnectWallet(): void { client = null; connectedAddress = null; }
 export function getConnectedAddress(): string | null { return connectedAddress; }
 
 export async function getBalance(): Promise<string> {
@@ -359,7 +300,7 @@ export async function getBalance(): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════
-// READ METHODS
+// READ
 // ═══════════════════════════════════════════════════════════
 
 export async function readSubmissionFromContract(key: string): Promise<Submission | null> {
@@ -370,14 +311,11 @@ export async function loadOnChainStats(): Promise<ContractStats | null> {
   try {
     const readClient = createClient({ chain: CHAIN });
     return await readStatsFromContract(readClient);
-  } catch (err) {
-    console.error('Failed to load on-chain stats:', err);
-    return null;
-  }
+  } catch { return null; }
 }
 
 // ═══════════════════════════════════════════════════════════
-// SUBMIT — Contract-Authoritative Flow
+// SUBMIT — Contract-Authoritative
 // ═══════════════════════════════════════════════════════════
 
 export async function submitContent(
@@ -391,17 +329,18 @@ export async function submitContent(
 
   const truncated = content.slice(0, 4000);
 
-  // ── Step 1: Pre-read stats to determine expected key ──
+  // Step 1: Pre-read stats for expected key
   let expectedKey = '';
   onPhaseChange('reading_state');
   try {
     const stats = await readStatsFromContract(client);
     if (stats) expectedKey = String(stats.submission_count);
+    console.log('[submit] pre-read stats: expectedKey =', expectedKey);
   } catch (e) {
-    console.warn('Pre-read stats failed:', e);
+    console.warn('[submit] pre-read stats failed:', e);
   }
 
-  // ── Step 2: Submit transaction ──
+  // Step 2: Submit transaction
   onPhaseChange('submitting');
   let txHashBigInt: bigint;
   try {
@@ -418,81 +357,113 @@ export async function submitContent(
   }
 
   const txHash = `0x${txHashBigInt.toString(16).padStart(64, '0')}`;
+  console.log('[submit] txHash =', txHash);
 
-  // ── Step 3: Wait for AI consensus ──
+  // Step 3: Wait for consensus
   onPhaseChange('awaiting_consensus');
-  let consensusReached = false;
+  let receipt: any = null;
 
   try {
-    await client.waitForTransactionReceipt({
+    receipt = await client.waitForTransactionReceipt({
       hash: txHash as any,
       status: TransactionStatus.FINALIZED,
       retries: CONSENSUS_RETRIES,
       interval: CONSENSUS_INTERVAL_MS,
     });
-    consensusReached = true;
+    console.log('[submit] FINALIZED receipt:', JSON.stringify(receipt).slice(0, 300));
   } catch {
-    console.warn('FINALIZED timeout, trying ACCEPTED...');
+    console.warn('[submit] FINALIZED timeout, trying ACCEPTED...');
     try {
-      await client.waitForTransactionReceipt({
+      receipt = await client.waitForTransactionReceipt({
         hash: txHash as any,
         status: TransactionStatus.ACCEPTED,
         retries: 60,
         interval: CONSENSUS_INTERVAL_MS,
       });
-      consensusReached = true;
+      console.log('[submit] ACCEPTED receipt:', JSON.stringify(receipt).slice(0, 300));
     } catch (e2) {
-      console.error('Consensus timeout:', e2);
+      console.error('[submit] ACCEPTED also timed out:', e2);
     }
   }
 
-  if (!consensusReached) {
+  if (!receipt) {
     return {
-      originality_score: 0,
-      is_original: false,
-      reasoning: 'Consensus timed out. Check the explorer for the eventual result.',
-      similar_sources: [],
-      authority: 'error',
-      txHash,
-      key: expectedKey,
-      validationWarnings: ['Consensus timeout — check explorer for result.'],
+      originality_score: 0, is_original: false,
+      reasoning: 'Consensus timed out. The transaction was sent but AI validators did not finalize in time. Check the explorer.',
+      similar_sources: [], authority: 'error', txHash, key: expectedKey,
+      validationWarnings: ['Consensus timeout — check explorer.'],
     };
   }
 
-  // ── Step 4: Determine submission key ──
-  let key = expectedKey;
+  // Check if the transaction resulted in an error
+  const txResultName = receipt?.resultName || receipt?.result;
+  console.log('[submit] receipt resultName =', txResultName);
+
+  // Step 4: Determine submission key
+  // Try multiple strategies to find the correct key
+  let key = '';
+
+  // Strategy A: Post-read stats to find the latest key
+  onPhaseChange('reading_result');
+  try {
+    await delay(2000); // Give contract state time to propagate
+    const postStats = await readStatsFromContract(client);
+    if (postStats && postStats.submission_count > 0) {
+      key = String(postStats.submission_count - 1);
+      console.log('[submit] post-read stats key =', key);
+    }
+  } catch (e) {
+    console.warn('[submit] post-read stats failed:', e);
+  }
+
+  // Strategy B: Use expectedKey if post-read failed
+  if (!key && expectedKey) {
+    key = expectedKey;
+    console.log('[submit] using expectedKey =', key);
+  }
+
+  // Strategy C: Try key "0" for first-ever submission
   if (!key) {
-    try {
-      const postStats = await readStatsFromContract(client);
-      if (postStats) key = String(postStats.submission_count - 1);
-    } catch (e) {
-      console.warn('Post-read stats failed:', e);
+    key = '0';
+    console.log('[submit] defaulting to key = 0');
+  }
+
+  // Step 5: Read contract judgment with retry
+  let submission = await readSubmissionWithRetry(key);
+
+  // Step 5b: If that key failed, try adjacent keys
+  if (!submission && key !== '0') {
+    const keyNum = parseInt(key, 10);
+    if (!isNaN(keyNum)) {
+      // Try key-1 (in case stats were stale)
+      console.log(`[submit] key=${key} failed, trying key=${keyNum - 1}`);
+      submission = await readSubmissionWithRetry(String(keyNum - 1));
+
+      // Try key+1 (in case race condition)
+      if (!submission) {
+        console.log(`[submit] trying key=${keyNum + 1}`);
+        submission = await readSubmissionWithRetry(String(keyNum + 1));
+        if (submission) key = String(keyNum + 1);
+      } else {
+        key = String(keyNum - 1);
+      }
     }
   }
-  if (!key) key = `unknown-${Date.now()}`;
 
-  // ── Step 5: Read the contract's AUTHORITATIVE judgment ──
-  onPhaseChange('reading_result');
-  const submission = await readSubmissionWithRetry(key);
   onPhaseChange('complete');
 
   if (!submission) {
     return {
-      originality_score: 0,
-      is_original: false,
-      reasoning: 'Failed to read contract judgment. The submission was recorded on-chain. Check the explorer.',
-      similar_sources: [],
-      authority: 'error',
-      txHash,
-      key,
-      validationWarnings: ['Contract read failed — check explorer.'],
+      originality_score: 0, is_original: false,
+      reasoning: `Transaction was sent (tx: ${txHash.slice(0, 14)}...) but could not read the judgment from the contract. This may mean the contract execution failed. Check the explorer for details.`,
+      similar_sources: [], authority: 'error', txHash, key,
+      validationWarnings: ['Contract read failed — the on-chain transaction may have errored. Check explorer.'],
     };
   }
 
-  // ── Step 6: Validate and return ──
+  // Step 6: Return result
   const validationWarnings = validateContractResult(submission);
   const enforcedOriginal = submission.originality_score >= PLAGIARISM_THRESHOLD;
-
   if (!submissionKeys.includes(key)) submissionKeys.unshift(key);
 
   return {
@@ -501,14 +472,12 @@ export async function submitContent(
     reasoning: submission.reasoning,
     similar_sources: submission.similar_sources || [],
     authority: 'contract',
-    txHash,
-    key,
-    validationWarnings,
+    txHash, key, validationWarnings,
   };
 }
 
 // ═══════════════════════════════════════════════════════════
-// APPEAL — Contract-Authoritative Flow
+// APPEAL — Contract-Authoritative
 // ═══════════════════════════════════════════════════════════
 
 export async function appealSubmission(
@@ -521,10 +490,7 @@ export async function appealSubmission(
   let txHashBigInt: bigint;
   try {
     txHashBigInt = await client.writeContract({
-      address: CONTRACT_ADDRESS,
-      functionName: 'appeal',
-      args: [key],
-      value: 0n,
+      address: CONTRACT_ADDRESS, functionName: 'appeal', args: [key], value: 0n,
     });
   } catch (txErr: any) {
     const errMsg = txErr?.message || txErr?.shortMessage || 'Appeal failed';
@@ -535,27 +501,26 @@ export async function appealSubmission(
   const txHash = `0x${txHashBigInt.toString(16).padStart(64, '0')}`;
 
   onPhaseChange('awaiting_consensus');
-  let consensusReached = false;
+  let receipt: any = null;
   try {
-    await client.waitForTransactionReceipt({ hash: txHash as any, status: TransactionStatus.FINALIZED, retries: CONSENSUS_RETRIES, interval: CONSENSUS_INTERVAL_MS });
-    consensusReached = true;
+    receipt = await client.waitForTransactionReceipt({ hash: txHash as any, status: TransactionStatus.FINALIZED, retries: CONSENSUS_RETRIES, interval: CONSENSUS_INTERVAL_MS });
   } catch {
     try {
-      await client.waitForTransactionReceipt({ hash: txHash as any, status: TransactionStatus.ACCEPTED, retries: 60, interval: CONSENSUS_INTERVAL_MS });
-      consensusReached = true;
+      receipt = await client.waitForTransactionReceipt({ hash: txHash as any, status: TransactionStatus.ACCEPTED, retries: 60, interval: CONSENSUS_INTERVAL_MS });
     } catch (e2) { console.error('Appeal consensus timeout:', e2); }
   }
 
-  if (!consensusReached) {
-    return { originality_score: 0, is_original: false, reasoning: 'Appeal consensus timed out.', similar_sources: [], authority: 'error', txHash, key, validationWarnings: ['Appeal consensus timeout'] };
+  if (!receipt) {
+    return { originality_score: 0, is_original: false, reasoning: 'Appeal consensus timed out.', similar_sources: [], authority: 'error', txHash, key, validationWarnings: ['Appeal timeout'] };
   }
 
   onPhaseChange('reading_result');
+  await delay(2000);
   const submission = await readSubmissionWithRetry(key);
   onPhaseChange('complete');
 
   if (!submission) {
-    return { originality_score: 0, is_original: false, reasoning: 'Failed to read updated judgment after appeal.', similar_sources: [], authority: 'error', txHash, key, validationWarnings: ['Contract read failed after appeal'] };
+    return { originality_score: 0, is_original: false, reasoning: 'Failed to read updated judgment after appeal.', similar_sources: [], authority: 'error', txHash, key, validationWarnings: ['Appeal read failed'] };
   }
 
   const validationWarnings = validateContractResult(submission);
@@ -566,10 +531,7 @@ export async function appealSubmission(
     is_original: enforcedOriginal,
     reasoning: submission.reasoning,
     similar_sources: submission.similar_sources || [],
-    authority: 'contract',
-    txHash,
-    key,
-    validationWarnings,
+    authority: 'contract', txHash, key, validationWarnings,
   };
 }
 
@@ -581,23 +543,19 @@ export function getSubmissionKeys(): string[] { return [...submissionKeys]; }
 
 export async function loadRecentSubmissionKeys(maxCount: number = 20): Promise<string[]> {
   try {
-    const onChainStats = await loadOnChainStats();
-    if (!onChainStats || onChainStats.submission_count === 0) return [];
-
-    const totalCount = onChainStats.submission_count;
-    const startKey = Math.max(0, totalCount - maxCount);
+    const stats = await loadOnChainStats();
+    if (!stats || stats.submission_count === 0) return [];
+    const total = stats.submission_count;
+    const start = Math.max(0, total - maxCount);
     const keys: string[] = [];
-    for (let i = totalCount - 1; i >= startKey; i--) keys.push(String(i));
-
+    for (let i = total - 1; i >= start; i--) keys.push(String(i));
     const existing = new Set(submissionKeys);
     for (const k of keys) { if (!existing.has(k)) submissionKeys.push(k); }
-
     submissionKeys.sort((a, b) => {
-      const na = parseInt(a, 10), nb = parseInt(b, 10);
+      const na = parseInt(a), nb = parseInt(b);
       if (!isNaN(na) && !isNaN(nb)) return nb - na;
       return b.localeCompare(a);
     });
-
     return [...submissionKeys];
   } catch { return [...submissionKeys]; }
 }

@@ -7,6 +7,11 @@ html {
   font-family: 'Space Grotesk', system-ui, sans-serif;
 }
 
+body {
+  background: #050508;
+  overflow-x: hidden;
+}
+
 ::selection {
   background: rgba(0, 255, 200, 0.2);
   color: #00ffc8;
@@ -61,24 +66,6 @@ html {
   z-index: 1;
 }
 
-/* ====== GLOWING BORDERS ====== */
-.glow-border {
-  position: relative;
-}
-.glow-border::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(0,255,200,0.3), transparent 40%, transparent 60%, rgba(255,0,200,0.3));
-  z-index: -1;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-.glow-border:hover::before {
-  opacity: 1;
-}
-
 /* ====== NEON TEXT GLOW ====== */
 .neon-cyan {
   text-shadow: 0 0 7px rgba(0, 255, 200, 0.6), 0 0 20px rgba(0, 255, 200, 0.2);
@@ -86,23 +73,8 @@ html {
 .neon-magenta {
   text-shadow: 0 0 7px rgba(255, 0, 200, 0.6), 0 0 20px rgba(255, 0, 200, 0.2);
 }
-.neon-lime {
-  text-shadow: 0 0 7px rgba(180, 255, 0, 0.6), 0 0 20px rgba(180, 255, 0, 0.2);
-}
 .neon-red {
   text-shadow: 0 0 7px rgba(255, 60, 60, 0.6), 0 0 20px rgba(255, 60, 60, 0.2);
-}
-
-/* ====== TYPEWRITER CURSOR ====== */
-.typewriter-cursor::after {
-  content: '▊';
-  animation: blink 1s step-end infinite;
-  color: #00ffc8;
-  margin-left: 2px;
-}
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
 }
 
 /* ====== PULSE DOT ====== */
@@ -136,10 +108,21 @@ html {
   overflow: hidden;
 }
 
-/* ====== TERMINAL BLINK ====== */
-@keyframes terminal-blink {
-  0%, 49% { border-color: #00ffc8; }
-  50%, 100% { border-color: transparent; }
+/* ====== CONSENSUS SPINNER ====== */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 /* ====== NOISE TEXTURE OVERLAY ====== */
@@ -150,4 +133,14 @@ html {
   z-index: 999;
   opacity: 0.015;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ====== CONSENSUS PROGRESS ====== */
+@keyframes consensus-progress {
+  0% { width: 5%; }
+  50% { width: 70%; }
+  100% { width: 95%; }
+}
+.consensus-progress {
+  animation: consensus-progress 30s ease-out forwards;
 }

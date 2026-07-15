@@ -1,89 +1,77 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'sonner';
 
-interface SubmitFormProps {
-  onSubmit: (content: string, contentType: string, sourceUrl: string) => Promise<void>;
-  isSubmitting: boolean;
-  walletConnected: boolean;
-}
-
-const contentTypes = [
-  { value: 'article', label: 'ARTICLE' },
-  { value: 'essay', label: 'ESSAY' },
-  { value: 'code', label: 'CODE' },
-  { value: 'creative', label: 'CREATIVE' },
-  { value: 'research', label: 'RESEARCH' },
+const CONTENT_TYPES = [
+  { value: 'article', label: 'Article', icon: '📰' },
+  { value: 'essay', label: 'Essay', icon: '📝' },
+  { value: 'code', label: 'Code', icon: '💻' },
+  { value: 'creative', label: 'Creative', icon: '🎨' },
+  { value: 'research', label: 'Research', icon: '🔬' },
 ];
 
-export default function SubmitForm({ onSubmit, isSubmitting, walletConnected }: SubmitFormProps) {
+interface SubmitFormProps {
+  onSubmit: (content: string, contentType: string, sourceUrl: string) => void;
+  isSubmitting: boolean;
+  disabled: boolean;
+}
+
+export default function SubmitForm({ onSubmit, isSubmitting, disabled }: SubmitFormProps) {
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState('article');
   const [sourceUrl, setSourceUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [charCount, setCharCount] = useState(0);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!content.trim()) return toast.error('Content cannot be empty');
-    if (content.length < 50) return toast.error('Minimum 50 characters required');
-    if (!walletConnected) return toast.error('Connect wallet first');
-
-    toast.promise(onSubmit(content, contentType, sourceUrl), {
-      loading: '⏳ Running validator consensus...',
-      success: '✓ Analysis finalized',
-      error: '✗ Transaction failed',
-    });
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    if (val.length <= 4000) {
+      setContent(val);
+      setCharCount(val.length);
+    }
   };
 
-  const charCount = content.length;
-  const maxChars = 4000;
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-  const charPct = (charCount / maxChars) * 100;
+  const handleSubmit = () => {
+    if (!content.trim() || content.trim().length < 50 || isSubmitting || disabled) return;
+    onSubmit(content, contentType, sourceUrl);
+  };
+
+  const canSubmit = content.trim().length >= 50 && !isSubmitting && !disabled;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6 }}
-      className="relative rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden"
+      transition={{ duration: 0.5 }}
+      className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden"
     >
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-400/80"></div>
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/80"></div>
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400/80"></div>
-        </div>
-        <span className="text-[10px] font-mono text-white/25 tracking-wider">
-          CONTENT_SCOUT.tsx
-        </span>
-        <div className="text-[10px] font-mono text-white/20">
-          {walletConnected ? (
-            <span className="text-cyan-400/60">● WALLET LINKED</span>
-          ) : (
-            <span className="text-red-400/60">○ NO WALLET</span>
-          )}
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+        <span className="text-[10px] font-mono tracking-[0.2em] text-white/25">SUBMIT_CONTENT</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-mono text-white/15">MAX 4000 CHARS</span>
+          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400/50 pulse-dot"></div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+      <div className="p-5 space-y-4">
         {/* Content type selector */}
         <div>
-          <label className="block text-[10px] font-mono tracking-[0.2em] text-white/30 mb-2">
-            CONTENT_TYPE
+          <label className="block text-[10px] font-mono tracking-[0.15em] text-white/30 mb-2 uppercase">
+            Content Type
           </label>
-          <div className="flex flex-wrap gap-1.5">
-            {contentTypes.map((type) => (
+          <div className="flex flex-wrap gap-2">
+            {CONTENT_TYPES.map((type) => (
               <button
                 key={type.value}
-                type="button"
                 onClick={() => setContentType(type.value)}
-                className={`px-3 py-1 rounded text-[11px] font-mono tracking-wider transition-all duration-200 ${
+                disabled={isSubmitting}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 ${
                   contentType === type.value
-                    ? 'bg-cyan-400/15 text-cyan-400 border border-cyan-400/30'
-                    : 'bg-white/[0.03] text-white/30 border border-white/[0.06] hover:text-white/50 hover:border-white/10'
+                    ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-400'
+                    : 'border-white/[0.06] bg-white/[0.02] text-white/30 hover:border-white/10 hover:text-white/50'
                 }`}
               >
+                <span className="mr-1.5">{type.icon}</span>
                 {type.label}
               </button>
             ))}
@@ -93,100 +81,76 @@ export default function SubmitForm({ onSubmit, isSubmitting, walletConnected }: 
         {/* Content textarea */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-[10px] font-mono tracking-[0.2em] text-white/30">
-              CONTENT_BODY
+            <label className="text-[10px] font-mono tracking-[0.15em] text-white/30 uppercase">
+              Content Body
             </label>
             {isFocused && (
-              <span className="text-[10px] font-mono text-cyan-400/50 animate-pulse">
-                INPUT ACTIVE
-              </span>
+              <span className="text-[9px] font-mono text-cyan-400/50 animate-pulse">INPUT ACTIVE</span>
             )}
           </div>
-          <div className={`relative rounded-lg border transition-all duration-300 ${
-            isFocused ? 'border-cyan-400/30 shadow-[0_0_20px_rgba(0,255,200,0.05)]' : 'border-white/[0.06]'
-          }`}>
+          <div className="relative">
             <textarea
               value={content}
-              onChange={(e) => setContent(e.target.value.slice(0, maxChars))}
+              onChange={handleContentChange}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              placeholder="// Paste content for ContentScout analysis..."
-              rows={6}
               disabled={isSubmitting}
-              className="w-full bg-transparent rounded-lg px-4 py-3 text-sm text-white/80 placeholder-white/15 font-mono focus:outline-none resize-none disabled:opacity-40"
+              placeholder="Paste the content you want to analyze for originality... (minimum 50 characters)"
+              className="w-full h-40 px-4 py-3 rounded-lg border border-white/[0.06] bg-black/40 text-sm text-white/80 placeholder-white/10 font-mono resize-none focus:border-cyan-400/30 focus:outline-none focus:ring-1 focus:ring-cyan-400/10 transition-all duration-300 disabled:opacity-50 custom-scrollbar"
             />
-            {/* Character progress bar */}
-            <div className="mx-4 mb-3 h-[2px] bg-white/5 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${
-                  charPct > 90 ? 'bg-red-400' : charPct > 70 ? 'bg-yellow-400' : 'bg-cyan-400/50'
-                }`}
-                style={{ width: `${charPct}%` }}
-              />
+            <div className="absolute bottom-2 right-3 text-[10px] font-mono text-white/15">
+              {charCount}/4000
             </div>
           </div>
-          <div className="flex justify-between mt-1.5 text-[10px] font-mono text-white/20">
-            <span>{charCount.toLocaleString()} / {maxChars.toLocaleString()} chars</span>
-            <span>{wordCount} words</span>
-          </div>
+          {content.trim().length > 0 && content.trim().length < 50 && (
+            <p className="text-[10px] font-mono text-yellow-400/50 mt-1">
+              ⚠ {50 - content.trim().length} more characters needed
+            </p>
+          )}
         </div>
 
         {/* Source URL */}
         <div>
-          <label className="block text-[10px] font-mono tracking-[0.2em] text-white/30 mb-2">
-            SOURCE_URL <span className="text-white/15">// optional</span>
+          <label className="block text-[10px] font-mono tracking-[0.15em] text-white/30 mb-2 uppercase">
+            Source URL (optional)
           </label>
           <input
             type="url"
             value={sourceUrl}
             onChange={(e) => setSourceUrl(e.target.value)}
-            placeholder="https://..."
             disabled={isSubmitting}
-            className="w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-4 py-2.5 text-sm text-white/80 placeholder-white/15 font-mono focus:outline-none focus:border-cyan-400/30 transition-all disabled:opacity-40"
+            placeholder="https://example.com/your-article"
+            className="w-full px-4 py-2.5 rounded-lg border border-white/[0.06] bg-black/40 text-sm text-white/80 placeholder-white/10 font-mono focus:border-cyan-400/30 focus:outline-none focus:ring-1 focus:ring-cyan-400/10 transition-all duration-300 disabled:opacity-50"
           />
         </div>
 
-        {/* Submit */}
+        {/* Submit button */}
         <button
-          type="submit"
-          disabled={!content.trim() || content.length < 50 || isSubmitting}
-          className="relative w-full group overflow-hidden rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          className={`w-full py-3 rounded-lg font-mono text-sm tracking-wider transition-all duration-300 ${
+            canSubmit
+              ? 'bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/20 border border-cyan-400/30 text-cyan-400 hover:from-cyan-500/30 hover:to-fuchsia-500/30 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(0,255,200,0.1)]'
+              : 'border border-white/[0.04] bg-white/[0.01] text-white/15 cursor-not-allowed'
+          }`}
         >
-          {/* Animated gradient border */}
-          <div className={`absolute inset-0 rounded-lg ${
-            isSubmitting
-              ? 'bg-white/10'
-              : 'bg-gradient-to-r from-cyan-500/40 via-fuchsia-500/40 to-cyan-500/40 bg-[length:200%_100%] animate-[gradient-shift_3s_linear_infinite]'
-          }`}></div>
-          <div className="absolute inset-[1px] rounded-[7px] bg-[#0a0a0f]"></div>
-
-          <div className="relative flex items-center justify-center gap-2 py-3 text-sm font-mono tracking-wider">
-            {isSubmitting ? (
-              <>
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                </div>
-                <span className="text-white/40">CONSENSUS IN PROGRESS</span>
-              </>
-            ) : (
-              <span className="text-cyan-400 group-hover:text-cyan-300 transition-colors">
-                ▶ EXECUTE ANALYSIS
-              </span>
-            )}
-          </div>
+          {isSubmitting ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              PROCESSING...
+            </span>
+          ) : (
+            'SUBMIT FOR AI ANALYSIS'
+          )}
         </button>
 
-        {!walletConnected && (
-          <div className="flex items-center gap-2 justify-center py-1">
-            <span className="w-1 h-1 rounded-full bg-yellow-400 animate-pulse"></span>
-            <span className="text-[10px] font-mono text-yellow-400/60 tracking-wider">
-              WALLET CONNECTION REQUIRED
-            </span>
-          </div>
-        )}
-      </form>
+        <p className="text-[9px] font-mono text-white/10 text-center">
+          Results are determined by on-chain AI consensus on GenLayer Studio. Contract judgment is authoritative (fail-closed).
+        </p>
+      </div>
     </motion.div>
   );
 }

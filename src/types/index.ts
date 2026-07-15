@@ -1,4 +1,11 @@
-// Contract State Types (mirroring GenLayer contract structure)
+// ═══════════════════════════════════════════════════════════
+// ContentScout — Type Definitions (Contract-Authoritative)
+// ═══════════════════════════════════════════════════════════
+// NO local heuristic types. NO metrics from browser analysis.
+// Every result type originates from the on-chain contract.
+// ═══════════════════════════════════════════════════════════
+
+/** Submission data — always read from contract, never locally generated */
 export interface Submission {
   key: string;
   author: string;
@@ -6,62 +13,66 @@ export interface Submission {
   content_type: string;
   source_url: string;
   originality_score: number;
+  /** ALWAYS enforced: is_original = originality_score >= 40 */
   is_original: boolean;
   reasoning: string;
   similar_sources: string[];
   appealed: boolean;
-  timestamp: number;
-  // On-chain status
   txHash?: string;
-  txStatus?: 'local' | 'pending' | 'finalized' | 'failed';
+  txStatus: 'pending' | 'finalized' | 'failed';
+  timestamp?: number;
 }
 
+/** Contract statistics — always read from contract */
 export interface ContractStats {
   submission_count: number;
   total_rewarded: number;
   total_rejected: number;
 }
 
-export interface RewardEligibility {
-  eligible: boolean;
-  author: string;
-  score: number;
-  key: string;
-  claimed: boolean;
-}
-
-// Analysis Types
+/** Analysis result — ONLY populated from contract judgment */
 export interface AnalysisResult {
   originality_score: number;
+  /** ALWAYS enforced fail-closed: is_original = originality_score >= 40 */
   is_original: boolean;
   reasoning: string;
   similar_sources: string[];
-  metrics: {
-    uniqueness: number;
-    vocabulary: number;
-    structure: number;
-    creativity: number;
-  };
-  // On-chain info
+  /**
+   * Authority source — only two valid values:
+   * - 'contract': Result was successfully read from the on-chain contract
+   * - 'error': Contract read failed — NO local substitute is provided
+   */
+  authority: 'contract' | 'error';
+  /** Transaction hash */
   txHash?: string;
-  txStatus?: 'local' | 'pending' | 'finalized' | 'failed';
+  /** Submission key */
   key?: string;
+  /** Validation warnings if contract result is inconsistent or lacks evidence */
+  validationWarnings?: string[];
 }
 
-// Wallet Types
+/** Wallet state */
 export interface WalletState {
   connected: boolean;
   address: string | null;
-  chainId: number | null;
   balance: string;
 }
 
-// Transaction Types
-export type TxStatusType = 'pending' | 'submitted' | 'finalized' | 'failed';
+/** Submission phases for the UI */
+export type SubmissionPhase =
+  | 'idle'
+  | 'reading_state'
+  | 'submitting'
+  | 'awaiting_consensus'
+  | 'reading_result'
+  | 'complete'
+  | 'failed';
 
-export interface Transaction {
-  hash: string;
-  status: TxStatusType;
-  method: string;
-  timestamp: number;
-}
+/** Appeal phases */
+export type AppealPhase =
+  | 'idle'
+  | 'submitting'
+  | 'awaiting_consensus'
+  | 'reading_result'
+  | 'complete'
+  | 'failed';

@@ -1,35 +1,18 @@
 {
   "name": "contentscout",
-  "version": "1.0.0",
-  "description": "AI-Powered Content Originality Scanner on GenLayer Blockchain",
+  "version": "2.0.0",
+  "description": "AI-Powered Content Originality Scanner on GenLayer Studio Blockchain — Contract-Authoritative, Fail-Closed",
   "private": false,
   "type": "module",
   "license": "MIT",
-  "author": "ContentScout Team",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/user/ContentScout"
-  },
-  "keywords": [
-    "originality",
-    "plagiarism",
-    "ai-detection",
-    "genlayer",
-    "blockchain",
-    "web3",
-    "content-analysis",
-    "intelligent-contract"
-  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "lint": "tsc --noEmit",
-    "deploy:contract": "bash scripts/deploy.sh"
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "clsx": "2.1.1",
-    "framer-motion": "^12.40.0",
+    "framer-motion": "^12.42.2",
     "genlayer-js": "^1.1.8",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -46,8 +29,5 @@
     "typescript": "5.9.3",
     "vite": "7.3.2",
     "vite-plugin-singlefile": "2.3.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }

@@ -1,41 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- Primary Meta Tags -->
-    <title>ContentScout — AI-Powered Content Originality Scanner</title>
-    <meta name="title" content="ContentScout — AI-Powered Content Originality Scanner" />
-    <meta name="description" content="Analyze your content for originality with transparent AI pattern detection. Score 0-100 based on uniqueness, vocabulary, structure, and creativity. Optionally record on GenLayer blockchain." />
-    <meta name="keywords" content="originality checker, plagiarism detection, AI content detector, content analysis, GenLayer, blockchain, writing analysis" />
-    <meta name="author" content="ContentScout" />
-    <meta name="theme-color" content="#07070b" />
-    
-    <!-- Favicon -->
+    <title>ContentScout — AI Content Originality Scanner | GenLayer Studio</title>
+    <meta name="description" content="AI-Powered Content Originality Scanner on GenLayer Studio Blockchain. Contract-authoritative results with fail-closed validation." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>" />
-    
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://contentscout.pages.dev/" />
-    <meta property="og:title" content="ContentScout — AI-Powered Content Originality Scanner" />
-    <meta property="og:description" content="Analyze your content for originality with transparent AI pattern detection. Score 0-100 based on uniqueness, vocabulary, structure, and creativity." />
-    <meta property="og:image" content="https://contentscout.pages.dev/og-image.png" />
-    
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://contentscout.pages.dev/" />
-    <meta property="twitter:title" content="ContentScout — AI-Powered Content Originality Scanner" />
-    <meta property="twitter:description" content="Analyze your content for originality with transparent AI pattern detection. Score 0-100 based on uniqueness, vocabulary, structure, and creativity." />
-    <meta property="twitter:image" content="https://contentscout.pages.dev/og-image.png" />
-    
-    <!-- PWA -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="ContentScout" />
+    <script>
+      // Anti-devtools: disable right-click, view source shortcuts
+      document.addEventListener('contextmenu', e => e.preventDefault());
+      document.addEventListener('keydown', e => {
+        if (e.key === 'F12' || 
+            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+            (e.ctrlKey && e.key === 'u') ||
+            (e.metaKey && e.altKey && (e.key === 'I' || e.key === 'J' || e.key === 'C'))) {
+          e.preventDefault();
+        }
+      });
+      // Disable console.log in production
+      if (location.hostname !== 'localhost') {
+        const noop = () => {};
+        console.log = noop; console.debug = noop; console.info = noop;
+      }
+    </script>
   </head>
-  <body>
+  <body class="bg-black text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
